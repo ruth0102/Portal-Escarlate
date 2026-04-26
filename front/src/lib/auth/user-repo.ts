@@ -1,10 +1,9 @@
 import "server-only";
-import {
-  SupabaseApiError,
-  type LegacyUserRow,
-  supabaseAdminRequest,
-} from "@/lib/supabase/server";
+import { apiAuth } from "@/services/api"; // Importando o Axios que vamos criar!
+import { AxiosError } from "axios";
 
+// Mantemos as tipagens para o TypeScript não reclamar
+export type LegacyUserRow = { id: string; email: string; password?: string; created_at: string };
 type PublicUserRow = Pick<LegacyUserRow, "id" | "email" | "created_at">;
 type AuthUserRow = Pick<LegacyUserRow, "id" | "email" | "password" | "created_at">;
 
@@ -25,43 +24,38 @@ export function normalizeEmail(email: string) {
   return email.trim().toLowerCase();
 }
 
-async function findFirstByEmail<T>(select: string, email: string) {
-  const normalizedEmail = normalizeEmail(email);
-  const query = new URLSearchParams({
-    select,
-    email: `eq.${normalizedEmail}`,
-    limit: "1",
-  });
-
-  const rows = await supabaseAdminRequest<T[]>(
-    `users?${query.toString()}`,
-    { method: "GET" },
-  );
-
-  return rows[0] ?? null;
-}
+// ------------------------------------------------------------------
+// O Front-End agora pede para o Microsserviço, em vez de ir no banco
+// ------------------------------------------------------------------
 
 export async function findUserByEmailForAuth(email: string) {
   try {
-    return await findFirstByEmail<AuthUserRow>("id,email,password,created_at", email);
+    const normalizedEmail = normalizeEmail(email);
+    // Faz um GET na porta do microsserviço de Auth (ex: localhost:4000/usuarios/auth?email=...)
+    const response = await apiAuth.get<AuthUserRow>(`/usuarios/auth`, {
+      params: { email: normalizedEmail },
+    });
+    return response.data;
   } catch (error) {
-    if (error instanceof SupabaseApiError) {
-      throw new Error(`Failed to fetch user for auth: ${error.message}`);
+    if (error instanceof AxiosError && error.response?.status === 404) {
+      return null; // Usuário não encontrado, normal no processo de login
     }
-
-    throw error;
+    throw new Error("Falha de comunicação com o Microsserviço de Autenticação.");
   }
 }
 
 export async function findUserByEmail(email: string) {
   try {
-    return await findFirstByEmail<PublicUserRow>("id,email,created_at", email);
+    const normalizedEmail = normalizeEmail(email);
+    const response = await apiAuth.get<PublicUserRow>(`/usuarios/publico`, {
+      params: { email: normalizedEmail },
+    });
+    return response.data;
   } catch (error) {
-    if (error instanceof SupabaseApiError) {
-      throw new Error(`Failed to fetch public user data: ${error.message}`);
+    if (error instanceof AxiosError && error.response?.status === 404) {
+      return null;
     }
-
-    throw error;
+    throw new Error("Falha ao buscar dados públicos do usuário via API.");
   }
 }
 
@@ -70,31 +64,19 @@ export async function createUser(input: {
   passwordHash: string;
 }) {
   try {
-    const rows = await supabaseAdminRequest<PublicUserRow[]>(
-      "users?select=id,email,created_at",
-      {
-        method: "POST",
-        headers: {
-          Prefer: "return=representation",
-        },
-        body: JSON.stringify({
-          email: normalizeEmail(input.email),
-          password: input.passwordHash,
-        }),
-      },
-    );
+    // Faz um POST enviando os dados para o microsserviço cadastrar
+    const response = await apiAuth.post<PublicUserRow>("/usuarios", {
+      email: normalizeEmail(input.email),
+      passwordHash: input.passwordHash,
+    });
 
-    return rows[0] ?? null;
+    return response.data;
   } catch (error) {
-    if (error instanceof SupabaseApiError && error.code === "23505") {
+    // Se o microsserviço avisar que deu conflito (Erro 409), o e-mail já existe
+    if (error instanceof AxiosError && error.response?.status === 409) {
       throw new DuplicateEmailError();
     }
-
-    if (error instanceof SupabaseApiError) {
-      throw new Error(`Failed to create user: ${error.message}`);
-    }
-
-    throw error;
+    throw new Error("Falha ao solicitar criação de usuário no Microsserviço.");
   }
 }
 

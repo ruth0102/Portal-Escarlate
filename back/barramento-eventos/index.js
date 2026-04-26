@@ -7,7 +7,6 @@ const app = express();
 app.use(express.json());
 
 // Lista das URLs dos seus futuros microsserviços.
-// Conforme você for criando eles nas próximas semanas, ajustaremos as portas aqui.
 const inscritos = [
     'http://localhost:4000/eventos', // Ex: Microsserviço de Coleta
     'http://localhost:5000/eventos', // Ex: Microsserviço de IA/Paráfrase
