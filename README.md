@@ -28,7 +28,7 @@ O projeto foi desenvolvido utilizando o padrão de **Microsserviços**, garantin
 
 ## ⚙️ Como executar o projeto localmente
 **1. Configuração do Banco de Dados**
-Certifique-se de ter o PostgreSQL instalado. Crie um banco chamado `portal_escarlate` e execute o script SQL para criar a tabela de usuários.
+Certifique-se de ter o PostgreSQL instalado. Crie um banco chamado `portal_escarlate` e rode o script localizado em `back/servico-auth/schema.sql` para criar as tabelas necessárias.
 
 **2. Variáveis de Ambiente (.env)**
 No diretório do microsserviço de autenticação, crie um arquivo `.env` com a seguinte estrutura:
