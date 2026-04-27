@@ -1,18 +1,8 @@
 import { NextResponse } from "next/server";
-import { requestEmailVerification } from "@/lib/auth/email-verification";
-import { flattenFieldErrors, registerSchema } from "@/lib/auth/validation";
+import { registerSchema, flattenFieldErrors } from "@/lib/auth/validation";
+import { createUser } from "@/lib/auth/user-repo";
 
 export const runtime = "nodejs";
-
-function getClientIp(request: Request) {
-  const forwarded = request.headers.get("x-forwarded-for");
-
-  if (forwarded) {
-    return forwarded.split(",")[0]?.trim() || "unknown";
-  }
-
-  return request.headers.get("x-real-ip")?.trim() || "unknown";
-}
 
 export async function POST(request: Request) {
   let payload: unknown;
@@ -21,8 +11,8 @@ export async function POST(request: Request) {
     payload = await request.json();
   } catch {
     return NextResponse.json(
-      { message: "Nao foi possivel ler os dados do cadastro." },
-      { status: 400 },
+      { message: "Não foi possível ler os dados do cadastro." },
+      { status: 400 }
     );
   }
 
@@ -34,32 +24,30 @@ export async function POST(request: Request) {
         message: parsed.error.issues[0]?.message ?? "Revise os campos informados.",
         fieldErrors: flattenFieldErrors(parsed.error),
       },
-      { status: 400 },
+      { status: 400 }
     );
   }
 
   try {
-    const result = await requestEmailVerification({
+    // Comunicação com o Microsserviço de Auth (Porta 4000)
+    const newUser = await createUser({
       email: parsed.data.email,
-      password: parsed.data.password,
-      ip: getClientIp(request),
+      passwordHash: parsed.data.password, 
     });
 
-    return NextResponse.json(
-      { message: result.message },
-      { status: result.status },
-    );
-  } catch (error) {
-    console.error("Register request route failed", error);
+    if (!newUser) {
+      throw new Error("Erro ao criar usuário no servidor.");
+    }
 
     return NextResponse.json(
-      {
-        message:
-          error instanceof Error
-            ? error.message
-            : "Nao foi possivel iniciar a verificacao por e-mail agora.",
-      },
-      { status: 500 },
+      { message: "Cadastro realizado com sucesso!" },
+      { status: 201 }
+    );
+  } catch (error: any) {
+    console.error("Erro na rota de registro:", error);
+    return NextResponse.json(
+      { message: "Não foi possível realizar o cadastro agora." },
+      { status: 500 }
     );
   }
 }

@@ -7,7 +7,6 @@ const app = express();
 app.use(express.json());
 
 // Lista das URLs dos seus futuros microsserviços.
-// Conforme você for criando eles nas próximas semanas, ajustaremos as portas aqui.
 const inscritos = [
     'http://localhost:4000/eventos', // Ex: Microsserviço de Coleta
     'http://localhost:5000/eventos', // Ex: Microsserviço de IA/Paráfrase
@@ -39,5 +38,5 @@ app.post('/eventos', (req, res) => {
 
 // O Barramento vai rodar na porta 10000 para não conflitar com nada
 app.listen(10000, () => {
-    console.log('🚌 Barramento de Eventos rodando na porta 10000');
+    console.log('Barramento de Eventos rodando na porta 10000');
 });
