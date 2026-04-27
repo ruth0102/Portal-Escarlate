@@ -1,78 +1,52 @@
 import NextAuth from "next-auth";
-import Credentials from "next-auth/providers/credentials";
+import CredentialsProvider from "next-auth/providers/credentials";
+import axios from "axios";
 import { loginSchema } from "@/lib/auth/validation";
-import { findUserByEmailForAuth, toSessionUser } from "@/lib/auth/user-repo";
-import { verifyPassword } from "@/lib/auth/password";
+import { toSessionUser } from "@/lib/auth/user-repo";
 
-const nextAuth = NextAuth({
+export const { handlers: { GET, POST }, auth, signIn, signOut } = NextAuth({
   trustHost: process.env.AUTH_TRUST_HOST === "true",
-  secret: process.env.AUTH_SECRET,
-  session: {
-    strategy: "jwt",
-  },
   providers: [
-    Credentials({
+    CredentialsProvider({
       name: "Credentials",
       credentials: {
-        email: {
-          label: "E-mail",
-          type: "email",
-        },
-        password: {
-          label: "Senha",
-          type: "password",
-        },
+        email: { label: "Email", type: "email" },
+        password: { label: "Password", type: "password" },
       },
       async authorize(credentials) {
+        // 1. Valida se os campos não estão vazios
         const parsed = loginSchema.safeParse(credentials);
+        if (!parsed.success) return null;
 
-        if (!parsed.success) {
+        try {
+          // 2. O Front-End envia a tentativa de login para o Microsserviço (Porta 4000)
+          const response = await axios.post("http://localhost:4000/usuarios/login", {
+            email: parsed.data.email,
+            password: parsed.data.password,
+          });
+
+          // 3. Se a porta 4000 responder com sucesso, o usuário é logado no site!
+          if (response.data && response.data.user) {
+            return toSessionUser(response.data.user);
+          }
+          return null;
+        } catch (error) {
+          // Se a senha estiver errada, o Microsserviço devolve o erro 401 e a tela avisa o usuário
+          console.error("Tentativa de login falhou ou microsserviço offline.");
           return null;
         }
-
-        const user = await findUserByEmailForAuth(parsed.data.email);
-
-        if (!user) {
-          return null;
-        }
-
-        const passwordIsValid = await verifyPassword(
-          parsed.data.password,
-          user.password,
-        );
-
-        if (!passwordIsValid) {
-          return null;
-        }
-
-        return toSessionUser(user);
       },
     }),
   ],
+  pages: {
+    signIn: "/login",
+  },
   callbacks: {
-    jwt({ token, user }) {
-      if (user) {
-        token.id = user.id;
-        token.role = user.role;
-        token.email = user.email;
+    async session({ session, token }) {
+      if (session.user && token.sub) {
+        session.user.id = token.sub;
       }
-
-      return token;
-    },
-    session({ session, token }) {
-      if (session.user) {
-        session.user.id = typeof token.id === "string" ? token.id : "";
-        session.user.role =
-          typeof token.role === "string" ? token.role : "user";
-        session.user.email = token.email ?? session.user.email ?? "";
-      }
-
       return session;
     },
   },
 });
-
-export const { auth, signIn, signOut } = nextAuth;
-export const {
-  handlers: { GET, POST },
-} = nextAuth;

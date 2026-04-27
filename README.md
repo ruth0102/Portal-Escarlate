@@ -19,3 +19,23 @@ O Portal Escarlate busca transformar o consumo de informação em uma experiênc
 - Consulta de dados públicos sobre políticos
 - Sistema de filtragem por categorias e relevância
 - Notificações baseadas em eventos do sistema
+
+## 🛠️ Tecnologias e Arquitetura
+O projeto foi desenvolvido utilizando o padrão de **Microsserviços**, garantindo que cada domínio da aplicação seja independente e escalável.
+- **Front-End:** Next.js (App Router), NextAuth (Sessões JWT via Cookies) e Axios.
+- **Back-End (Auth):** Node.js, Express, Bcrypt (Hash de senhas) e PostgreSQL local.
+- **Comunicação:** Barramento de Eventos interno para comunicação assíncrona entre os microsserviços.
+
+## ⚙️ Como executar o projeto localmente
+**1. Configuração do Banco de Dados**
+Certifique-se de ter o PostgreSQL instalado. Crie um banco chamado `portal_escarlate` e execute o script SQL para criar a tabela de usuários.
+
+**2. Variáveis de Ambiente (.env)**
+No diretório do microsserviço de autenticação, crie um arquivo `.env` com a seguinte estrutura:
+`DATABASE_URL="postgresql://postgres:SUA_SENHA@localhost:5432/portal_escarlate"`
+
+**3. Inicialização dos Serviços**
+Abra terminais distintos para cada serviço e execute:
+- **Barramento:** `node index.js` (Porta 10000)
+- **Serviço de Auth:** `node index.js` (Porta 4000)
+- **Front-End:** `npm run dev` (Porta 3000)

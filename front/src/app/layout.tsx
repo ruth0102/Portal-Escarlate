@@ -1,6 +1,8 @@
+import { LogoutButton } from "@/components/LogoutButton";
 import type { Metadata } from "next";
-import Link from "next/link"; // Importante para a navegação interna
+import Link from "next/link";
 import "./globals.css";
+import { Providers } from "@/components/Providers";
 
 export const metadata: Metadata = {
   title: "Portal Escarlate",
@@ -16,31 +18,34 @@ export default function RootLayout({
   return (
     <html lang="pt-BR">
       <body>
-        {/* Adicionando a Navbar Global */}
-        <nav style={{
-          display: 'flex',
-          gap: '20px',
-          padding: '20px',
-          backgroundColor: '#1a1a1a',
-          color: 'white',
-          borderBottom: '2px solid #e63946'
-        }}>
-          <Link href="/dashboard" style={{ color: 'white', textDecoration: 'none', fontWeight: 'bold' }}>
-            Portal Escarlate
-          </Link>
-          <div style={{ marginLeft: 'auto', display: 'flex', gap: '20px' }}>
-            <Link href="/dashboard" style={{ color: 'white', textDecoration: 'none' }}>Home</Link>
-            
-            {/* O link para a entrega de hoje (26/04) */}
-            <Link href="/profile" style={{ color: '#e63946', textDecoration: 'none', fontWeight: 'bold' }}>
-              Perfil
+        <Providers>
+          <nav style={{
+            display: 'flex',
+            gap: '20px',
+            padding: '20px',
+            backgroundColor: '#1a1a1a',
+            color: 'white',
+            borderBottom: '2px solid #e63946',
+            alignItems: 'center' 
+          }}>
+            <Link href="/dashboard" style={{ color: 'white', textDecoration: 'none', fontWeight: 'bold' }}>
+              Portal Escarlate
             </Link>
-            
-            <Link href="/login" style={{ color: 'white', textDecoration: 'none' }}>Sair</Link>
-          </div>
-        </nav>
+            <div style={{ marginLeft: 'auto', display: 'flex', gap: '20px', alignItems: 'center' }}>
+              <Link href="/dashboard" style={{ color: 'white', textDecoration: 'none' }}>Home</Link>
+              
+              <Link href="/profile" style={{ color: '#e63946', textDecoration: 'none', fontWeight: 'bold' }}>
+                Perfil
+              </Link>
+              
+              {/* 2. SUBSTITUÍMOS TODO AQUELE FORMULÁRIO POR ESTA ÚNICA LINHA: */}
+              <LogoutButton variant="link" />
+              
+            </div>
+          </nav>
 
-        <main>{children}</main>
+          <main>{children}</main>
+        </Providers>
       </body>
     </html>
   );

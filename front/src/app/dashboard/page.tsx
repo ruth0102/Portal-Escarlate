@@ -1,11 +1,12 @@
 import { redirect } from "next/navigation";
 import { auth } from "@/auth";
-import { signOutAction } from "@/app/dashboard/actions";
+import { LogoutButton } from "@/components/LogoutButton"; // Usando o novo componente para limpar o cache
 import styles from "./dashboard.module.css";
 
 export default async function DashboardPage() {
   const session = await auth();
 
+  // Proteção de rota: se não houver sessão válida, redireciona para a home
   if (!session?.user) {
     redirect("/");
   }
@@ -13,48 +14,55 @@ export default async function DashboardPage() {
   return (
     <main className={styles.page}>
       <section className={styles.panel}>
+        
+        {/* CABEÇALHO */}
         <div className={styles.header}>
           <div>
             <span className={styles.kicker}>Ala reservada</span>
             <h1 className={styles.title}>Portal Escarlate</h1>
           </div>
 
-          <form action={signOutAction}>
-            <button className={styles.action} type="submit">
-              Sair
-            </button>
-          </form>
+          {/* Substituímos o formulário antigo pelo LogoutButton inteligente */}
+          <LogoutButton className={styles.action}>
+            Sair
+          </LogoutButton>
         </div>
 
+        {/* GRADE DE CARDS */}
         <div className={styles.grid}>
+          
+          {/* CARD: CONTA ATIVA */}
           <article className={styles.card}>
             <span className={styles.label}>Conta ativa</span>
             <strong className={styles.value}>{session.user.email}</strong>
             <p className={styles.copy}>
-              Sessao autenticada com JWT via Auth.js, usando a tabela `users`
-              no Supabase apenas pelo servidor.
+              Sessão autenticada via JWT com Auth.js. Comunicação validada pelo 
+              <strong> Microsserviço de Autenticação (Node.js)</strong> e dados persistidos no 
+              <strong> PostgreSQL Local</strong>.
             </p>
           </article>
 
+          {/* CARD: ARQUITETURA */}
           <article className={styles.card}>
-            <span className={styles.label}>Perfil</span>
-            <strong className={styles.value}>{session.user.role}</strong>
+            <span className={styles.label}>Arquitetura</span>
+            <strong className={styles.value}>Microsserviços</strong>
             <p className={styles.copy}>
-              O fluxo de entrada ja esta pronto para evoluir a autorizacao por
-              papel sem expor dados sensiveis ao cliente.
+              O Front-End atua de forma independente. O acesso ao banco de dados é restrito ao back-end, 
+              garantindo a segurança e a integridade da plataforma Portal Escarlate.
             </p>
           </article>
 
+          {/* CARD: PRÓXIMA ETAPA */}
           <article className={styles.cardWide}>
-            <span className={styles.label}>Proxima etapa</span>
-            <strong className={styles.value}>Curadoria e pesquisa documental</strong>
+            <span className={styles.label}>Próxima etapa</span>
+            <strong className={styles.value}>Integração de Notificações</strong>
             <p className={styles.copy}>
-              A home publica agora direciona o acesso. Daqui em diante, o passo
-              natural e conectar a area editorial, os filtros de noticias e a
-              pesquisa em arquivos publicos sobre contratos, votacoes, diarios
-              oficiais e rastros relevantes de poder.
+              O barramento de eventos (Porta 10000) já recebe as sinalizações de novos usuários. 
+              O passo seguinte é a implementação do consumo dessa fila para disparos de e-mail assíncronos 
+              via Microsserviço de Notificação.
             </p>
           </article>
+
         </div>
       </section>
     </main>

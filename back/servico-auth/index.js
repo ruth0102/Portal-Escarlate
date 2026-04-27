@@ -1,78 +1,115 @@
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
-const { createClient } = require('@supabase/supabase-js');
+const axios = require('axios');
+const { Pool } = require('pg'); 
+const bcrypt = require('bcryptjs');
+const jwt = require('jsonwebtoken');
 
 const app = express();
-app.use(cors()); // Libera o acesso para o Front-End
-app.use(express.json()); // Permite ler o corpo das requisições em JSON
+app.use(cors());
+app.use(express.json());
 
-// Configuração da "Despensa" (Supabase)
-const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
+// Conexão com o seu Postgres Local
+const pool = new Pool({
+    connectionString: process.env.DATABASE_URL,
+});
 
-// -----------------------------------------------------------------
-// ROTAS DO MICROSSERVIÇO
-// -----------------------------------------------------------------
+const JWT_SECRET = process.env.JWT_SECRET || "sua_chave_secreta_aqui";
 
-// Rota 1: Buscar usuário para Login (O Front-End usa essa para validar a senha)
+// ==========================================
+// ROTAS DE AUTENTICAÇÃO E CADASTRO
+// ==========================================
+
+// 1. ROTA DE CADASTRO (Cria o usuário e avisa o barramento)
+app.post('/usuarios', async (req, res) => {
+    const { email, passwordHash: passwordRaw } = req.body;
+
+    try {
+        // Criptografia da senha
+        const salt = await bcrypt.genSalt(10);
+        const passwordHashed = await bcrypt.hash(passwordRaw, salt);
+
+        // Salvar no Postgres Local
+        const query = 'INSERT INTO users (email, password) VALUES ($1, $2) RETURNING id, email';
+        const values = [email, passwordHashed];
+        const result = await pool.query(query, values);
+        
+        const newUser = result.rows[0];
+
+        // Disparar Evento para o Barramento (Porta 10000)
+        try {
+            await axios.post('http://localhost:10000/eventos', {
+                tipo: 'USUARIO_CRIADO',
+                dados: newUser
+            });
+        } catch (e) {
+            console.log("Aviso: Barramento offline.");
+        }
+
+        res.status(201).json(newUser);
+    } catch (error) {
+        if (error.code === '23505') return res.status(409).json({ erro: 'E-mail já existe' });
+        console.error(error);
+        res.status(500).json({ erro: "Erro ao salvar no banco local." });
+    }
+});
+
+// 2. ROTA DE LOGIN (Valida a senha e gera o Token)
+app.post('/usuarios/login', async (req, res) => {
+    const { email, password } = req.body;
+
+    try {
+        const result = await pool.query('SELECT * FROM users WHERE email = $1', [email]);
+        if (result.rows.length === 0) {
+            return res.status(401).json({ erro: 'Credenciais inválidas' });
+        }
+
+        const user = result.rows[0];
+        const passwordMatch = await bcrypt.compare(password, user.password);
+        
+        if (!passwordMatch) {
+            return res.status(401).json({ erro: 'Credenciais inválidas' });
+        }
+
+        // Gera o "Passaporte" do usuário
+        const token = jwt.sign({ id: user.id, email: user.email }, JWT_SECRET, { expiresIn: '1h' });
+        res.json({ user: { id: user.id, email: user.email }, token });
+    } catch (error) {
+        res.status(500).json({ erro: error.message });
+    }
+});
+
+// 3. ROTA DE BUSCA COMPLETA (Usada pelo front no processo de Auth)
 app.get('/usuarios/auth', async (req, res) => {
     const { email } = req.query;
-
-    const { data: user, error } = await supabase
-        .from('users') // Substitua 'users' pelo nome real da sua tabela, se for diferente
-        .select('id, email, password, created_at')
-        .eq('email', email)
-        .single(); // Garante que pega só um
-
-    if (error || !user) {
-        return res.status(404).json({ erro: 'Usuário não encontrado' });
+    try {
+        const result = await pool.query('SELECT * FROM users WHERE email = $1', [email]);
+        if (result.rows.length === 0) {
+            return res.status(404).json({ erro: 'Usuário não encontrado' });
+        }
+        res.json(result.rows[0]);
+    } catch (error) {
+        res.status(500).json({ erro: error.message });
     }
-
-    res.json(user);
 });
 
-// Rota 2: Buscar dados públicos do usuário (Sem expor a senha)
+// 4. ROTA PÚBLICA (Retorna dados sem expor a senha criptografada)
 app.get('/usuarios/publico', async (req, res) => {
     const { email } = req.query;
-
-    const { data: user, error } = await supabase
-        .from('users')
-        .select('id, email, created_at')
-        .eq('email', email)
-        .single();
-
-    if (error || !user) {
-        return res.status(404).json({ erro: 'Usuário não encontrado' });
-    }
-
-    res.json(user);
-});
-
-// Rota 3: Criar um novo usuário (Cadastro)
-app.post('/usuarios', async (req, res) => {
-    const { email, passwordHash } = req.body;
-
-    const { data: newUser, error } = await supabase
-        .from('users')
-        .insert([{ email, password: passwordHash }])
-        .select('id, email, created_at')
-        .single();
-
-    if (error) {
-        // Código 23505 é o padrão de banco de dados para "Valor Duplicado"
-        if (error.code === '23505') {
-            return res.status(409).json({ erro: 'Já existe uma conta com esse e-mail.' });
+    try {
+        const result = await pool.query('SELECT id, email, created_at FROM users WHERE email = $1', [email]);
+        if (result.rows.length === 0) {
+            return res.status(404).json({ erro: 'Usuário não encontrado' });
         }
-        return res.status(500).json({ erro: 'Erro interno ao criar usuário' });
+        res.json(result.rows[0]);
+    } catch (error) {
+        res.status(500).json({ erro: error.message });
     }
-
-    res.status(201).json(newUser);
 });
 
-// -----------------------------------------------------------------
-// LIGANDO O SERVIDOR
-// -----------------------------------------------------------------
+// ==========================================
+// INICIALIZAÇÃO DO SERVIDOR
+// ==========================================
 const PORT = process.env.PORT || 4000;
-app.listen(PORT, () => {
-    console.log(`🔐 Microsserviço de Auth rodando na porta ${PORT}`);
-});
+app.listen(PORT, () => console.log(`Servico-Auth rodando na porta ${PORT}`));

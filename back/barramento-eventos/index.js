@@ -38,5 +38,5 @@ app.post('/eventos', (req, res) => {
 
 // O Barramento vai rodar na porta 10000 para não conflitar com nada
 app.listen(10000, () => {
-    console.log('🚌 Barramento de Eventos rodando na porta 10000');
+    console.log('Barramento de Eventos rodando na porta 10000');
 });

@@ -1,30 +1,20 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React from 'react';
 import Link from 'next/link';
+import { useSession } from "next-auth/react";
 
 export default function ProfilePage() {
-  // Estado para simular se o usuário está logado
-  // No futuro, isso virá do seu contexto de autenticação ou cookie
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
-  const [loading, setLoading] = useState(true);
+  // O useSession verifica automaticamente o Cookie do NextAuth
+  const { data: session, status } = useSession();
 
-  useEffect(() => {
-    // Simula uma verificação de sessão ao carregar a página
-    const checkAuth = async () => {
-      // Aqui você verificaria se existe um token ou usuário no localStorage/Cookie
-      const user = localStorage.getItem('user'); // Exemplo simples
-      if (user) setIsLoggedIn(true);
-      setLoading(false);
-    };
+  // 1. Enquanto ele verifica se existe sessão
+  if (status === "loading") {
+    return <div style={{ padding: '100px', textAlign: 'center', color: '#fff' }}>Carregando...</div>;
+  }
 
-    checkAuth();
-  }, []);
-
-  if (loading) return <div style={{ padding: '40px' }}>Carregando...</div>;
-
-  // --- SE NÃO ESTIVER LOGADO ---
-  if (!isLoggedIn) {
+  // 2. --- SE NÃO ESTIVER LOGADO (session será null) ---
+  if (!session) {
     return (
       <div style={{ 
         padding: '100px 40px', 
@@ -32,13 +22,14 @@ export default function ProfilePage() {
         display: 'flex',
         flexDirection: 'column',
         alignItems: 'center',
-        gap: '20px'
+        gap: '20px',
+        color: '#fff'
       }}>
         <h2 style={{ color: '#e63946' }}>Acesso Restrito</h2>
         <p>Por favor, <strong>faça login</strong> primeiro para visualizar seu perfil e gerenciar notificações.</p>
         <Link href="/login" style={{
           padding: '10px 25px',
-          backgroundColor: '#1a1a1a',
+          backgroundColor: '#333',
           color: 'white',
           textDecoration: 'none',
           borderRadius: '5px',
@@ -50,11 +41,22 @@ export default function ProfilePage() {
     );
   }
 
-  // --- SE ESTIVER LOGADO ---
+  // 3. --- SE ESTIVER LOGADO ---
   return (
-    <div style={{ padding: '40px', maxWidth: '600px', margin: '0 auto' }}>
-      <h1>O Seu Perfil</h1>
-      {/* ... restante do código do perfil que criamos antes ... */}
+    <div style={{ padding: '60px 40px', maxWidth: '800px', margin: '0 auto', color: '#fff' }}>
+      <h1 style={{ borderBottom: '2px solid #e63946', paddingBottom: '10px' }}>Seu Perfil</h1>
+      
+      <div style={{ marginTop: '30px', backgroundColor: 'rgba(255,255,255,0.05)', padding: '20px', borderRadius: '10px' }}>
+        <p><strong>E-mail:</strong> {session.user?.email}</p>
+        <p><strong>Status da Conta:</strong> Ativa (via Microsserviço de Auth)</p>
+      </div>
+
+      <div style={{ marginTop: '40px' }}>
+        <h3>Configurações de Notificações</h3>
+        <p style={{ fontStyle: 'italic', opacity: 0.7 }}>
+          Integração com o Microsserviço de Notificações em breve...
+        </p>
+      </div>
     </div>
   );
 }
