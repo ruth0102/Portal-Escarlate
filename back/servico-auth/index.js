@@ -1,115 +1,169 @@
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
-const axios = require('axios');
-const { Pool } = require('pg'); 
 const bcrypt = require('bcryptjs');
-const jwt = require('jsonwebtoken');
+const axios = require('axios'); // Para comunicação com o barramento de eventos
+const { createClient } = require('@supabase/supabase-js');
 
 const app = express();
-app.use(cors());
 app.use(express.json());
+app.use(cors());
 
-// Conexão com o seu Postgres Local
-const pool = new Pool({
-    connectionString: process.env.DATABASE_URL,
+// Conectando o microsserviço ao Supabase
+const supabaseUrl = process.env.SUPABASE_URL;
+const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY; 
+const supabase = createClient(supabaseUrl, supabaseKey);
+
+// ROTA 1: LOGIN
+app.post('/login', async (req, res) => {
+  const { email, password } = req.body;
+
+  try {
+    // Busca o usuário no Supabase
+    const { data: user, error } = await supabase
+      .from('users')
+      .select('*')
+      .eq('email', email)
+      .single();
+
+    if (error || !user) {
+      return res.status(401).json({ error: 'Credenciais inválidas' });
+    }
+
+    // Compara a senha digitada com o hash do banco
+    const isPasswordCorrect = await bcrypt.compare(password, user.password);
+    if (!isPasswordCorrect) {
+      return res.status(401).json({ error: 'Credenciais inválidas' });
+    }
+
+    // --- NOTIFICAÇÃO AO BARRAMENTO DE EVENTOS ---
+    try {
+      await axios.post('http://localhost:10000/eventos', {
+        tipo: "UsuarioLogado",
+        dados: {
+          id: user.id,
+          email: user.email,
+          horario: new Date().toISOString()
+        }
+      });
+      console.log("Evento 'UsuarioLogado' enviado ao barramento.");
+    } catch (e) {
+      console.error("Aviso: Barramento de eventos indisponível para login.");
+    }
+
+    // Retorna os dados para o Front-End (NextAuth)
+    res.json({
+      id: user.id,
+      email: user.email,
+      role: user.role || 'Usuário'
+    });
+
+  } catch (err) {
+    res.status(500).json({ error: 'Erro interno no microsserviço' });
+  }
 });
 
-const JWT_SECRET = process.env.JWT_SECRET || "sua_chave_secreta_aqui";
-
-// ==========================================
-// ROTAS DE AUTENTICAÇÃO E CADASTRO
-// ==========================================
-
-// 1. ROTA DE CADASTRO (Cria o usuário e avisa o barramento)
+// ROTA 2: CADASTRO (/usuarios)
 app.post('/usuarios', async (req, res) => {
-    const { email, passwordHash: passwordRaw } = req.body;
+  const { email, passwordHash } = req.body; // Recebe passwordHash conforme configurado no front
 
-    try {
-        // Criptografia da senha
-        const salt = await bcrypt.genSalt(10);
-        const passwordHashed = await bcrypt.hash(passwordRaw, salt);
+  try {
+    // Verifica se o usuário já existe
+    const { data: existingUser } = await supabase
+      .from('users')
+      .select('id')
+      .eq('email', email)
+      .single();
 
-        // Salvar no Postgres Local
-        const query = 'INSERT INTO users (email, password) VALUES ($1, $2) RETURNING id, email';
-        const values = [email, passwordHashed];
-        const result = await pool.query(query, values);
-        
-        const newUser = result.rows[0];
-
-        // Disparar Evento para o Barramento (Porta 10000)
-        try {
-            await axios.post('http://localhost:10000/eventos', {
-                tipo: 'USUARIO_CRIADO',
-                dados: newUser
-            });
-        } catch (e) {
-            console.log("Aviso: Barramento offline.");
-        }
-
-        res.status(201).json(newUser);
-    } catch (error) {
-        if (error.code === '23505') return res.status(409).json({ erro: 'E-mail já existe' });
-        console.error(error);
-        res.status(500).json({ erro: "Erro ao salvar no banco local." });
+    if (existingUser) {
+      return res.status(400).json({ error: 'E-mail já cadastrado' });
     }
+
+    // Criptografa a senha antes de salvar
+    const salt = await bcrypt.genSalt(10);
+    const hashedPassword = await bcrypt.hash(passwordHash, salt);
+
+    // Salva o novo usuário no Supabase
+    const { data: newUser, error } = await supabase
+      .from('users')
+      .insert([
+        { 
+          email: email, 
+          password: hashedPassword,
+          role: 'Usuário' 
+        }
+      ])
+      .select()
+      .single();
+
+    if (error) throw error;
+
+    // --- NOTIFICAÇÃO AO BARRAMENTO DE EVENTOS ---
+    try {
+      await axios.post('http://localhost:10000/eventos', {
+        tipo: "UsuarioCriado",
+        dados: {
+          id: newUser.id,
+          email: newUser.email,
+          role: newUser.role
+        }
+      });
+      console.log("Evento 'UsuarioCriado' enviado ao barramento.");
+    } catch (e) {
+      console.error("Aviso: Barramento de eventos indisponível para cadastro.");
+    }
+
+    res.status(201).json({ 
+      message: 'Usuário criado com sucesso', 
+      user: { id: newUser.id, email: newUser.email } 
+    });
+
+  } catch (err) {
+    console.error("Erro detalhado:", err);
+    res.status(500).json({ error: 'Erro interno ao criar usuário' });
+  }
 });
 
-// 2. ROTA DE LOGIN (Valida a senha e gera o Token)
-app.post('/usuarios/login', async (req, res) => {
-    const { email, password } = req.body;
+// ROTA 3: EXCLUSÃO
+app.delete('/usuarios/:id', async (req, res) => {
+  const { id } = req.params;
 
+  try {
+    const { error } = await supabase
+      .from('users')
+      .delete()
+      .eq('id', id);
+
+    if (error) throw error;
+
+    // --- NOTIFICAÇÃO AO BARRAMENTO DE EVENTOS ---
     try {
-        const result = await pool.query('SELECT * FROM users WHERE email = $1', [email]);
-        if (result.rows.length === 0) {
-            return res.status(401).json({ erro: 'Credenciais inválidas' });
-        }
-
-        const user = result.rows[0];
-        const passwordMatch = await bcrypt.compare(password, user.password);
-        
-        if (!passwordMatch) {
-            return res.status(401).json({ erro: 'Credenciais inválidas' });
-        }
-
-        // Gera o "Passaporte" do usuário
-        const token = jwt.sign({ id: user.id, email: user.email }, JWT_SECRET, { expiresIn: '1h' });
-        res.json({ user: { id: user.id, email: user.email }, token });
-    } catch (error) {
-        res.status(500).json({ erro: error.message });
+      await axios.post('http://localhost:10000/eventos', {
+        tipo: "UsuarioExcluido",
+        dados: { id }
+      });
+      console.log("Evento 'UsuarioExcluido' enviado ao barramento.");
+    } catch (e) {
+      console.log("Aviso: Barramento offline.");
     }
+
+    res.status(200).json({ message: 'Usuário removido com sucesso' });
+  } catch (err) {
+    res.status(500).json({ error: 'Erro ao deletar usuário' });
+  }
 });
 
-// 3. ROTA DE BUSCA COMPLETA (Usada pelo front no processo de Auth)
-app.get('/usuarios/auth', async (req, res) => {
-    const { email } = req.query;
-    try {
-        const result = await pool.query('SELECT * FROM users WHERE email = $1', [email]);
-        if (result.rows.length === 0) {
-            return res.status(404).json({ erro: 'Usuário não encontrado' });
-        }
-        res.json(result.rows[0]);
-    } catch (error) {
-        res.status(500).json({ erro: error.message });
-    }
+// ROTA 4: RECEBER EVENTOS DO BARRAMENTO
+app.post('/eventos', (req, res) => {
+  const evento = req.body;
+  console.log(`[Auth] Evento recebido do barramento: ${evento.tipo}`);
+  
+  // Aqui no futuro você pode colocar lógica caso o Auth precise reagir a algo
+  
+  res.status(200).send({ msg: 'Evento recebido pelo Auth' });
 });
 
-// 4. ROTA PÚBLICA (Retorna dados sem expor a senha criptografada)
-app.get('/usuarios/publico', async (req, res) => {
-    const { email } = req.query;
-    try {
-        const result = await pool.query('SELECT id, email, created_at FROM users WHERE email = $1', [email]);
-        if (result.rows.length === 0) {
-            return res.status(404).json({ erro: 'Usuário não encontrado' });
-        }
-        res.json(result.rows[0]);
-    } catch (error) {
-        res.status(500).json({ erro: error.message });
-    }
-});
-
-// ==========================================
 // INICIALIZAÇÃO DO SERVIDOR
-// ==========================================
-const PORT = process.env.PORT || 4000;
-app.listen(PORT, () => console.log(`Servico-Auth rodando na porta ${PORT}`));
+app.listen(4000, () => {
+  console.log('Microsserviço de Auth rodando na porta 4000 (Conectado ao Supabase)');
+});
