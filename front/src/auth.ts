@@ -1,50 +1,70 @@
 import NextAuth from "next-auth";
-import CredentialsProvider from "next-auth/providers/credentials";
-import axios from "axios";
-import { loginSchema } from "@/lib/auth/validation";
-import { toSessionUser } from "@/lib/auth/user-repo";
+import Credentials from "next-auth/providers/credentials";
 
-export const { handlers: { GET, POST }, auth, signIn, signOut } = NextAuth({
-  trustHost: process.env.AUTH_TRUST_HOST === "true",
+export const { handlers, auth, signIn, signOut } = NextAuth({
   providers: [
-    CredentialsProvider({
+    Credentials({
       name: "Credentials",
       credentials: {
         email: { label: "Email", type: "email" },
         password: { label: "Password", type: "password" },
+        remember: { type: "text" }, // 1. Campo para receber o valor do checkbox
       },
       async authorize(credentials) {
-        // 1. Valida se os campos não estão vazios
-        const parsed = loginSchema.safeParse(credentials);
-        if (!parsed.success) return null;
+        if (!credentials?.email || !credentials?.password) return null;
 
         try {
-          // 2. O Front-End envia a tentativa de login para o Microsserviço (Porta 4000)
-          const response = await axios.post("http://localhost:4000/usuarios/login", {
-            email: parsed.data.email,
-            password: parsed.data.password,
+          // O Front-End faz a requisição HTTP para o Microsserviço de Auth (Porta 4000)
+          const response = await fetch("http://localhost:4000/login", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              email: credentials.email,
+              password: credentials.password,
+            }),
           });
 
-          // 3. Se a porta 4000 responder com sucesso, o usuário é logado no site!
-          if (response.data && response.data.user) {
-            return toSessionUser(response.data.user);
-          }
-          return null;
+          if (!response.ok) return null;
+
+          const user = await response.json();
+          
+          // 2. Retornamos o "remember" junto com os dados do usuário para o JWT
+          return {
+            id: user.id.toString(),
+            email: user.email,
+            role: user.role,
+            remember: credentials.remember, // "true" ou "false" vindo do front
+          };
         } catch (error) {
-          // Se a senha estiver errada, o Microsserviço devolve o erro 401 e a tela avisa o usuário
-          console.error("Tentativa de login falhou ou microsserviço offline.");
+          console.error("Erro ao conectar com o microsserviço:", error);
           return null;
         }
       },
     }),
   ],
   pages: {
-    signIn: "/login",
+    signIn: "/", // Define a página raiz como tela de login
   },
   callbacks: {
+    async jwt({ token, user }) {
+      // Quando o usuário faz login pela primeira vez
+      if (user) {
+        token.role = (user as any).role;
+        
+        // 3. Lógica de Expiração Dinâmica
+        // Se "manter acesso ativo" estiver desativado, o token expira em 1 hora (3600s)
+        if ((user as any).remember === "false") {
+          // Math.floor(Date.now() / 1000) gera o timestamp atual em segundos
+          token.exp = Math.floor(Date.now() / 1000) + 3600;
+        }
+      }
+      return token;
+    },
     async session({ session, token }) {
-      if (session.user && token.sub) {
+      // Repassa os dados do Token para a Sessão acessível no Front-end
+      if (token?.sub && session.user) {
         session.user.id = token.sub;
+        (session.user as any).role = token.role; 
       }
       return session;
     },

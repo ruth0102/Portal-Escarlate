@@ -9,12 +9,14 @@ type Mode = "login" | "register";
 
 type AuthPortalProps = {
   initialMode?: Mode;
-  loginNotice?: string;
+  loginNotice?: string; // Usado para mensagens de sucesso
+  loginError?: string;  // NOVO: Usado para mensagens de erro
 };
 
 export function AuthPortal({
   initialMode = "login",
   loginNotice,
+  loginError, // Recebendo a nova prop aqui
 }: AuthPortalProps) {
   const [mode, setMode] = useState<Mode>(initialMode);
 
@@ -148,7 +150,8 @@ export function AuthPortal({
               <div className={styles.panelArea}>
                 <LoginForm
                   active={mode === "login"}
-                  initialNotice={loginNotice}
+                  initialNotice={loginNotice} // Passa o sucesso se houver
+                  errorMessage={loginError}   // Passa o erro se houver
                 />
                 <RegisterForm active={mode === "register"} />
               </div>

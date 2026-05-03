@@ -10,6 +10,7 @@ import styles from "./AuthPortal.module.css";
 type LoginFormProps = {
   active: boolean;
   initialNotice?: string;
+  errorMessage?: string; // NOVO: Recebendo a prop de erro
 };
 
 const defaultMessage: AuthMessage = {
@@ -17,17 +18,20 @@ const defaultMessage: AuthMessage = {
   text: "Login: pronto para conectar sua autenticação e liberar a área de monitoramento e pesquisa pública.",
 };
 
-export function LoginForm({ active, initialNotice }: LoginFormProps) {
+export function LoginForm({ active, initialNotice, errorMessage }: LoginFormProps) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
-  const [message, setMessage] = useState<AuthMessage>(
-    initialNotice
-      ? {
-          tone: "success",
-          text: initialNotice,
-        }
-      : defaultMessage,
-  );
+  
+  // Modificado: Agora ele dá prioridade máxima para a mensagem de erro
+  const [message, setMessage] = useState<AuthMessage>(() => {
+    if (errorMessage) {
+      return { tone: "error", text: errorMessage };
+    }
+    if (initialNotice) {
+      return { tone: "success", text: initialNotice };
+    }
+    return defaultMessage;
+  });
 
   return (
     <AuthForm
@@ -51,6 +55,10 @@ export function LoginForm({ active, initialNotice }: LoginFormProps) {
         event.preventDefault();
 
         const formData = new FormData(event.currentTarget);
+        
+        // 1. CAPTURAMOS O VALOR DO CHECKBOX (retorna true se estiver marcado)
+        const isRememberChecked = formData.get("remember") === "on";
+
         const parsed = loginSchema.safeParse({
           email: formData.get("email"),
           password: formData.get("password"),
@@ -72,14 +80,15 @@ export function LoginForm({ active, initialNotice }: LoginFormProps) {
             const response = await signIn("credentials", {
               email: parsed.data.email,
               password: parsed.data.password,
+              // 2. ENVIAMOS O VALOR PARA O NEXTAUTH
+              remember: isRememberChecked ? "true" : "false", 
               redirect: false,
-              redirectTo: "/dashboard",
             });
 
-            if (!response?.ok) {
+            if (response?.error) {
               setMessage({
                 tone: "error",
-                text: "Credenciais inválidas ou conta indisponível no momento.",
+                text: "E-mail e/ou senha incorretos.",
               });
               return;
             }
@@ -89,7 +98,7 @@ export function LoginForm({ active, initialNotice }: LoginFormProps) {
               text: "Acesso confirmado. Redirecionando para a ala reservada...",
             });
 
-            router.push(response.url ?? "/dashboard");
+            router.push("/dashboard");
             router.refresh();
           } finally {
             setBusy(false);

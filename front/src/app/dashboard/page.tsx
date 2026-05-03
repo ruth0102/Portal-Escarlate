@@ -38,7 +38,7 @@ export default async function DashboardPage() {
             <p className={styles.copy}>
               Sessão autenticada via JWT com Auth.js. Comunicação validada pelo 
               <strong> Microsserviço de Autenticação (Node.js)</strong> e dados persistidos no 
-              <strong> PostgreSQL Local</strong>.
+              <strong> Supabase (PostgreSQL em nuvem)</strong>.
             </p>
           </article>
 
@@ -47,8 +47,7 @@ export default async function DashboardPage() {
             <span className={styles.label}>Arquitetura</span>
             <strong className={styles.value}>Microsserviços</strong>
             <p className={styles.copy}>
-              O Front-End atua de forma independente. O acesso ao banco de dados é restrito ao back-end, 
-              garantindo a segurança e a integridade da plataforma Portal Escarlate.
+              O Front-End (Next.js) atua de forma independente. O acesso direto ao banco de dados é totalmente restrito aos microsserviços do back-end, garantindo a segurança e a integridade da plataforma Portal Escarlate.
             </p>
           </article>
 
@@ -57,9 +56,7 @@ export default async function DashboardPage() {
             <span className={styles.label}>Próxima etapa</span>
             <strong className={styles.value}>Integração de Notificações</strong>
             <p className={styles.copy}>
-              O barramento de eventos (Porta 10000) já recebe as sinalizações de novos usuários. 
-              O passo seguinte é a implementação do consumo dessa fila para disparos de e-mail assíncronos 
-              via Microsserviço de Notificação.
+              O barramento de eventos (Porta 10000) já notifica a criação, login e exclusão de contas. O próximo passo é evoluir a arquitetura de microsserviços integrando os demais domínios do sistema para reagirem a esses eventos de forma assíncrona.
             </p>
           </article>
 
