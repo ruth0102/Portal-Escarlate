@@ -73,14 +73,42 @@ export default function ProfilePage() {
     );
   }
 
+  // Descobre se o usuário já verificou o e-mail
+  const isVerified = (session.user as any).is_verified;
+
   // 3. --- SE ESTIVER LOGADO ---
   return (
     <div style={{ padding: '60px 40px', maxWidth: '800px', margin: '0 auto', color: '#fff' }}>
       <h1 style={{ borderBottom: '2px solid #e63946', paddingBottom: '10px' }}>Seu Perfil</h1>
       
       <div style={{ marginTop: '30px', backgroundColor: 'rgba(255,255,255,0.05)', padding: '20px', borderRadius: '10px' }}>
-        <p><strong>E-mail:</strong> {session.user?.email}</p>
-        <p><strong>Status da Conta:</strong> Ativa (via Microsserviço de Auth)</p>
+        <p style={{ marginBottom: '8px' }}><strong>E-mail:</strong> {session.user?.email}</p>
+        <p style={{ marginBottom: '15px' }}>
+          <strong>Status da Conta:</strong> {isVerified ? 'Verificada ✅' : 'Pendente de Verificação ⚠️'}
+        </p>
+
+        {/* === NOVO BOTÃO DE VERIFICAR E-MAIL AQUI === */}
+        {!isVerified && (
+          <button 
+            onClick={() => alert(`O link de verificação foi enviado para ${session.user?.email} no momento do cadastro. Por favor, verifique sua caixa de entrada e spam.`)}
+            style={{
+              padding: '8px 16px',
+              backgroundColor: '#e63946',
+              color: '#fff',
+              border: 'none',
+              borderRadius: '5px',
+              cursor: 'pointer',
+              fontWeight: 'bold',
+              fontSize: '14px',
+              transition: 'background-color 0.3s'
+            }}
+            onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#cc0000'}
+            onMouseLeave={(e) => e.currentTarget.style.backgroundColor = '#e63946'}
+          >
+            Verificar E-mail
+          </button>
+        )}
+        {/* =========================================== */}
       </div>
 
       <div style={{ marginTop: '40px' }}>

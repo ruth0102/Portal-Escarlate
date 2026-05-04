@@ -6,12 +6,13 @@ const app = express();
 // Permite que o Express entenda requisições no formato JSON
 app.use(express.json());
 
-// Lista das URLs dos seus futuros microsserviços.
+// Lista das URLs dos futuros microsserviços.
 const inscritos = [
-    'http://localhost:4000/eventos', // Ex: Microsserviço de Coleta
-    'http://localhost:5000/eventos', // Ex: Microsserviço de IA/Paráfrase
-    'http://localhost:6000/eventos', // Ex: Microsserviço de Dossiê
-    'http://localhost:7000/eventos'  // Ex: Microsserviço de Feed
+    'http://localhost:4000/eventos', // Microsserviço de Autenticação
+    //'http://localhost:5000/eventos', // Microsserviço de IA/Paráfrase
+    //'http://localhost:6000/eventos', // Microsserviço de Coleta
+    //'http://localhost:7000/eventos', // Microsserviço de Feed
+    'http://localhost:8000/eventos', // Microsserviço de Notificação
 ];
 
 // Rota principal que recebe os eventos

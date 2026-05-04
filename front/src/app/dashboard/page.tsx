@@ -11,10 +11,31 @@ export default async function DashboardPage() {
     redirect("/");
   }
 
+  // Lemos o status de verificação vindo do seu Microsserviço via NextAuth
+  const isVerified = (session.user as any).is_verified;
+
   return (
     <main className={styles.page}>
       <section className={styles.panel}>
         
+        {/* === NOVA FAIXA DE AVISO DE E-MAIL AQUI === */}
+        {!isVerified && (
+          <div style={{
+            backgroundColor: 'rgba(230, 57, 70, 0.2)', // Fundo avermelhado transparente
+            border: '1px solid #e63946',
+            color: '#ffb3b3',
+            padding: '12px 20px',
+            borderRadius: '8px',
+            marginBottom: '25px',
+            textAlign: 'center',
+            fontWeight: 'bold',
+            fontSize: '14px'
+          }}>
+            ⚠️ Seu e-mail ainda não foi verificado. Por favor, cheque sua caixa de entrada para liberar o acesso total.
+          </div>
+        )}
+        {/* ========================================= */}
+
         {/* CABEÇALHO */}
         <div className={styles.header}>
           <div>

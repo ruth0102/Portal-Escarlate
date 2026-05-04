@@ -1,7 +1,7 @@
 import Link from "next/link";
-import { redirect } from "next/navigation";
-import { verifyPendingEmailToken } from "@/lib/auth/email-verification";
+import axios from "axios";
 import styles from "./verify-email.module.css";
+import { SuccessButton } from "./SuccessButton"; 
 
 export default async function VerifyEmailPage({
   searchParams,
@@ -11,26 +11,44 @@ export default async function VerifyEmailPage({
   const params = await searchParams;
   const code = params.code?.trim();
 
-  if (code) {
-    const result = await verifyPendingEmailToken(code);
+  let verificadoComSucesso = false;
 
-    if (result.ok) {
-      redirect("/login?verified=1");
+  if (code) {
+    try {
+      await axios.post("http://localhost:4000/verificar-email", { code });
+      verificadoComSucesso = true;
+    } catch (error) {
+      console.error("Falha ao verificar código.");
     }
   }
 
   return (
     <main className={styles.page}>
       <section className={styles.panel}>
-        <span className={styles.kicker}>Verificacao de e-mail</span>
-        <h1 className={styles.title}>Codigo expirado ou invalido</h1>
-        <p className={styles.copy}>
-          Este link nao pode mais ser usado. Solicite um novo cadastro para
-          receber outro e-mail de confirmacao.
-        </p>
-        <Link className={styles.action} href="/login">
-          Voltar para login
-        </Link>
+        <span className={styles.kicker}>Verificação de e-mail</span>
+
+        {/* Renderização Condicional: Se deu certo, mostra uma tela. Se deu erro, mostra outra. */}
+        {verificadoComSucesso ? (
+          <>
+            <h1 className={styles.title}>E-mail Verificado!</h1>
+            <p className={styles.copy}>
+              Sua conta foi validada com sucesso. Para aplicar as mudanças e liberar seu acesso completo, por favor, faça o login novamente.
+            </p>
+            <SuccessButton />
+          </>
+        ) : (
+          <>
+            <h1 className={styles.title}>Código expirado ou inválido</h1>
+            <p className={styles.copy}>
+              Este link não pode mais ser usado, já foi validado ou não existe. 
+              Acesse seu perfil ou solicite um novo cadastro.
+            </p>
+            <Link className={styles.action} href="/dashboard">
+              Voltar para o Dashboard
+            </Link>
+          </>
+        )}
+
       </section>
     </main>
   );

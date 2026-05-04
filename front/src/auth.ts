@@ -28,11 +28,12 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
 
           const user = await response.json();
           
-          // 2. Retornamos o "remember" junto com os dados do usuário para o JWT
+          // 2. Retornamos TUDO que o microsserviço mandou (agora incluindo is_verified)
           return {
             id: user.id.toString(),
             email: user.email,
             role: user.role,
+            is_verified: user.is_verified, 
             remember: credentials.remember, // "true" ou "false" vindo do front
           };
         } catch (error) {
@@ -50,6 +51,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       // Quando o usuário faz login pela primeira vez
       if (user) {
         token.role = (user as any).role;
+        token.is_verified = (user as any).is_verified; 
         
         // 3. Lógica de Expiração Dinâmica
         // Se "manter acesso ativo" estiver desativado, o token expira em 1 hora (3600s)
@@ -65,6 +67,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       if (token?.sub && session.user) {
         session.user.id = token.sub;
         (session.user as any).role = token.role; 
+        (session.user as any).is_verified = token.is_verified; 
       }
       return session;
     },

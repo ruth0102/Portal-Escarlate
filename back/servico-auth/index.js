@@ -1,3 +1,4 @@
+const crypto = require('crypto');
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
@@ -51,11 +52,12 @@ app.post('/login', async (req, res) => {
       console.error("Aviso: Barramento de eventos indisponível para login.");
     }
 
-    // Retorna os dados para o Front-End (NextAuth)
+    // Retorna os dados para o Front-End (NextAuth) - Agora inclui o status de verificação!
     res.json({
       id: user.id,
       email: user.email,
-      role: user.role || 'Usuário'
+      role: user.role || 'Usuário',
+      is_verified: user.is_verified 
     });
 
   } catch (err) {
@@ -66,6 +68,7 @@ app.post('/login', async (req, res) => {
 // ROTA 2: CADASTRO (/usuarios)
 app.post('/usuarios', async (req, res) => {
   const { email, passwordHash } = req.body; // Recebe passwordHash conforme configurado no front
+  const token = crypto.randomBytes(32).toString('hex'); // Gera o código de verificação
 
   try {
     // Verifica se o usuário já existe
@@ -83,14 +86,15 @@ app.post('/usuarios', async (req, res) => {
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(passwordHash, salt);
 
-    // Salva o novo usuário no Supabase
+    // Salva o novo usuário no Supabase JUNTO com o token
     const { data: newUser, error } = await supabase
       .from('users')
       .insert([
         { 
           email: email, 
           password: hashedPassword,
-          role: 'Usuário' 
+          role: 'Usuário',
+          verification_token: token 
         }
       ])
       .select()
@@ -105,7 +109,8 @@ app.post('/usuarios', async (req, res) => {
         dados: {
           id: newUser.id,
           email: newUser.email,
-          role: newUser.role
+          role: newUser.role,
+          token: token // O TOKEN VAI PARA O BARRAMENTO AQUI!
         }
       });
       console.log("Evento 'UsuarioCriado' enviado ao barramento.");
@@ -153,12 +158,40 @@ app.delete('/usuarios/:id', async (req, res) => {
   }
 });
 
-// ROTA 4: RECEBER EVENTOS DO BARRAMENTO
+// ROTA 4: VALIDAR CÓDIGO DE E-MAIL (Nova Rota para o Front-End usar)
+app.post('/verificar-email', async (req, res) => {
+  const { code } = req.body;
+
+  try {
+    // Procura no banco se existe algum usuário com esse token
+    const { data: user, error } = await supabase
+      .from('users')
+      .select('id')
+      .eq('verification_token', code)
+      .single();
+
+    if (error || !user) {
+      return res.status(400).json({ error: 'Código inválido ou já utilizado' });
+    }
+
+    // Se achou, atualiza o is_verified para true e limpa o token
+    const { error: updateError } = await supabase
+      .from('users')
+      .update({ is_verified: true, verification_token: null })
+      .eq('id', user.id);
+
+    if (updateError) throw updateError;
+
+    res.status(200).json({ message: 'E-mail verificado com sucesso!' });
+  } catch (err) {
+    res.status(500).json({ error: 'Erro interno ao verificar e-mail' });
+  }
+});
+
+// ROTA 5: RECEBER EVENTOS DO BARRAMENTO
 app.post('/eventos', (req, res) => {
   const evento = req.body;
   console.log(`[Auth] Evento recebido do barramento: ${evento.tipo}`);
-  
-  // Aqui no futuro você pode colocar lógica caso o Auth precise reagir a algo
   
   res.status(200).send({ msg: 'Evento recebido pelo Auth' });
 });
