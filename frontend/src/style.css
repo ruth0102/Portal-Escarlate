@@ -1,0 +1,113 @@
+:root {
+  --bg-black: #080304;
+  --bg-deep: #140607;
+  --wine: #2f0608;
+  --crimson: #5a0d12;
+  --scarlet: #8f1019;
+  --ruby: #b91c1c;
+  --gold-1: #fef1b8;
+  --gold-2: #e7c566;
+  --gold-3: #b98724;
+  --gold-4: #75520f;
+  --text-main: #f8edd0;
+  --text-soft: #dacaa0;
+  --text-fade: rgba(248, 237, 208, 0.72);
+  --line-soft: rgba(231, 197, 102, 0.24);
+  --line-strong: rgba(231, 197, 102, 0.48);
+  --panel-soft: rgba(255, 255, 255, 0.035);
+  --panel-red: rgba(120, 10, 16, 0.16);
+  --glow-gold: 0 0 32px rgba(231, 197, 102, 0.16);
+  --glow-red: 0 0 40px rgba(185, 28, 28, 0.16);
+  --shadow-main: 0 40px 120px rgba(0, 0, 0, 0.55);
+  --radius-lg: 34px;
+  --radius-md: 22px;
+  --radius-sm: 14px;
+  --transition: 220ms ease;
+  --font-ui: "Segoe UI", "Helvetica Neue", system-ui, sans-serif;
+  --font-display: Georgia, "Times New Roman", serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  min-height: 100%;
+}
+
+html {
+  color-scheme: dark;
+}
+
+body {
+  margin: 0;
+  font-family: var(--font-ui);
+  color: var(--text-main);
+  background:
+    radial-gradient(circle at 18% 14%, rgba(231, 197, 102, 0.16), transparent 20%),
+    radial-gradient(circle at 82% 16%, rgba(185, 28, 28, 0.22), transparent 24%),
+    radial-gradient(circle at 50% 50%, rgba(120, 10, 16, 0.14), transparent 30%),
+    radial-gradient(circle at 70% 72%, rgba(231, 197, 102, 0.08), transparent 26%),
+    linear-gradient(130deg, #050203 0%, #130506 24%, #22080a 54%, #110405 76%, #050203 100%);
+  overflow-x: hidden;
+  position: relative;
+}
+
+body::before,
+body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+}
+
+body::before {
+  background:
+    repeating-linear-gradient(
+      90deg,
+      transparent 0,
+      transparent 120px,
+      rgba(231, 197, 102, 0.025) 121px,
+      transparent 122px
+    ),
+    repeating-linear-gradient(
+      0deg,
+      transparent 0,
+      transparent 120px,
+      rgba(231, 197, 102, 0.018) 121px,
+      transparent 122px
+    );
+  mix-blend-mode: screen;
+  opacity: 0.35;
+}
+
+body::after {
+  background:
+    radial-gradient(circle at center, transparent 50%, rgba(0, 0, 0, 0.55) 100%),
+    linear-gradient(
+      180deg,
+      rgba(255, 255, 255, 0.03),
+      transparent 18%,
+      transparent 82%,
+      rgba(255, 255, 255, 0.03)
+    );
+}
+
+a {
+  color: inherit;
+}
+
+button,
+input {
+  font: inherit;
+}
+
+main,
+section,
+div,
+form {
+  position: relative;
+  z-index: 1;
+}

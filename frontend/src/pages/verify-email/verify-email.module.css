@@ -1,0 +1,55 @@
+.page {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+.panel {
+  width: min(560px, 100%);
+  padding: 36px;
+  border-radius: 28px;
+  border: 1px solid rgba(231, 197, 102, 0.18);
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.035), rgba(255, 255, 255, 0.01)),
+    linear-gradient(145deg, rgba(87, 10, 16, 0.34), rgba(12, 5, 6, 0.56));
+  box-shadow: var(--shadow-main);
+}
+
+.kicker {
+  display: block;
+  margin-bottom: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.26rem;
+  color: rgba(248, 237, 208, 0.58);
+  font-size: 0.76rem;
+}
+
+.title {
+  margin: 0 0 12px;
+  font-family: var(--font-display);
+  font-size: clamp(2rem, 5vw, 3rem);
+  color: var(--gold-1);
+}
+
+.copy {
+  margin: 0 0 24px;
+  line-height: 1.8;
+  color: rgba(248, 237, 208, 0.72);
+}
+
+.action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 48px;
+  padding: 0 20px;
+  border-radius: 999px;
+  border: 1px solid rgba(231, 197, 102, 0.24);
+  background: rgba(16, 6, 7, 0.54);
+  color: var(--gold-1);
+  text-decoration: none;
+  text-transform: uppercase;
+  letter-spacing: 0.18rem;
+}
