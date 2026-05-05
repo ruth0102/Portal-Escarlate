@@ -8,31 +8,29 @@
 
 ## 📌 Descrição do Projeto
 O Portal Escarlate é uma plataforma web que tem como objetivo central oferecer uma forma mais inteligente, organizada e crítica de consumir notícias.
-A aplicação permite que usuários acessem notícias relevantes a partir de links externos, com o diferencial de utilizar inteligência artificial para processamento de conteúdo, incluindo parafraseamento e resumo automático.
-Além disso, o sistema integra dados públicos relacionados a agentes políticos, permitindo ao usuário cruzar informações e obter uma visão mais contextualizada dos acontecimentos.
-O Portal Escarlate busca transformar o consumo de informação em uma experiência mais clara, eficiente e consciente.
+A aplicação visa permitir que usuários acessem notícias relevantes com o diferencial de utilizar inteligência artificial para processamento de conteúdo e cruzar dados públicos de agentes políticos. O estágio atual do sistema foca na base estrutural de microsserviços, segurança e comunicação assíncrona para suportar essas futuras integrações.
 
-## 🚀 Funcionalidades
-- Cadastro e autenticação de usuários
-- Cadastro e visualização de notícias via links
-- Processamento automático de notícias com IA (resumo e parafraseamento)
-- Consulta de dados públicos sobre políticos
-- Sistema de filtragem por categorias e relevância
-- Notificações baseadas em eventos do sistema
+## 🚀 Funcionalidades Atuais
+- Cadastro, autenticação e exclusão autônoma de usuários
+- Sessões dinâmicas com controle temporizado de expiração de acesso (JWT)
+- Rotas protegidas no Front-End
+- Captura de eventos do sistema (criação, login e exclusão de contas) via Barramento
+- Persistência de dados em nuvem com Supabase
 
 ## 🛠️ Tecnologias e Arquitetura
-O projeto foi desenvolvido utilizando o padrão de **Microsserviços**, garantindo que cada domínio da aplicação seja independente e escalável.
+O projeto está sendo desenvolvido utilizando o padrão de **Microsserviços**, garantindo que cada domínio da aplicação seja independente e escalável.
 - **Front-End:** Next.js (App Router), NextAuth (Sessões JWT via Cookies) e Axios.
-- **Back-End (Auth):** Node.js, Express, Bcrypt (Hash de senhas) e PostgreSQL local.
+- **Back-End (Auth):** Node.js, Express, BcryptJS (Hash de senhas) e Supabase (PostgreSQL em nuvem).
 - **Comunicação:** Barramento de Eventos interno para comunicação assíncrona entre os microsserviços.
 
 ## ⚙️ Como executar o projeto localmente
 **1. Configuração do Banco de Dados**
-Certifique-se de ter o PostgreSQL instalado. Crie um banco chamado `portal_escarlate` e rode o script localizado em `back/servico-auth/schema.sql` para criar as tabelas necessárias.
+O projeto utiliza o Supabase como banco de dados em nuvem. Crie um projeto na plataforma Supabase e rode o script localizado em `back/servico-auth/schema.sql` no editor SQL deles para criar as tabelas necessárias.
 
 **2. Variáveis de Ambiente (.env)**
-No diretório do microsserviço de autenticação, crie um arquivo `.env` com a seguinte estrutura:
-`DATABASE_URL="postgresql://postgres:SUA_SENHA@localhost:5432/portal_escarlate"`
+No diretório do microsserviço de autenticação (`back/servico-auth`), crie um arquivo `.env` com a seguinte estrutura:
+`SUPABASE_URL="https://sua-url-do-supabase.supabase.co"`
+`SUPABASE_SERVICE_ROLE_KEY="sua_chave_service_role_aqui"`
 
 **3. Inicialização dos Serviços**
 Abra terminais distintos para cada serviço e execute:

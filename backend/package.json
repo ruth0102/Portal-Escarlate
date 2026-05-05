@@ -1,0 +1,19 @@
+{
+  "name": "portal-escarlate-backend",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "node src/dev.js",
+    "dev:gateway": "node --env-file=../.env --watch src/server.js",
+    "dev:auth": "node --env-file=../.env --watch src/services/auth/server.js",
+    "dev:registration": "node --env-file=../.env --watch src/services/registration/server.js",
+    "dev:news": "node --env-file=../.env --watch src/services/news/server.js",
+    "start": "node --env-file=../.env src/server.js"
+  },
+  "dependencies": {
+    "argon2": "^0.44.0",
+    "googleapis": "^171.4.0",
+    "zod": "^4.4.3"
+  }
+}
