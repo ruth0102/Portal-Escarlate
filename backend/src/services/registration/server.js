@@ -1,6 +1,5 @@
 import http from 'node:http'
 import { requestEmailVerification, verifyPendingEmailToken } from '../../lib/auth/email-verification.js'
-import { buildSessionCookie, createSessionToken } from '../../lib/auth/session.js'
 import { flattenFieldErrors, registerSchema } from '../../lib/auth/validation.js'
 import { getClientIp } from '../../shared/http/client-ip.js'
 import { json, noContent, readJson } from '../../shared/http/json.js'
@@ -59,23 +58,15 @@ async function handleVerifyEmail(response, url) {
     const result = await verifyPendingEmailToken(code)
 
     if (!result.ok) {
-      json(response, 400, { message: 'Codigo expirado ou invalido.' })
+      json(response, result.status ?? 400, {
+        message: result.message ?? 'Codigo expirado ou invalido.',
+      })
       return
     }
 
-    const token = createSessionToken(result.user)
-
-    json(
-      response,
-      200,
-      {
-        message: 'E-mail verificado com sucesso. Acesso liberado.',
-        user: result.user,
-      },
-      {
-        'set-cookie': buildSessionCookie(token),
-      },
-    )
+    json(response, 200, {
+      message: 'E-mail verificado com sucesso. Agora faca login para acessar.',
+    })
   } catch (error) {
     console.error('[registration-service] Email verification failed', error)
     json(response, 500, { message: 'Nao foi possivel verificar o e-mail agora.' })

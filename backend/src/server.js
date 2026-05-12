@@ -4,30 +4,46 @@ import { json } from './shared/http/json.js'
 const port = Number.parseInt(process.env.PORT ?? '3000', 10)
 const hostname = process.env.HOST ?? '127.0.0.1'
 
+function getServiceTarget(urlEnvName, hostEnvName, portEnvName, fallbackPort) {
+  const serviceUrl = process.env[urlEnvName]?.trim()
+
+  if (serviceUrl) {
+    return serviceUrl.replace(/\/+$/g, '')
+  }
+
+  return `http://${process.env[hostEnvName] ?? hostname}:${process.env[portEnvName] ?? fallbackPort}`
+}
+
 const services = {
   auth: {
     name: 'auth',
-    target: `http://${process.env.AUTH_SERVICE_HOST ?? hostname}:${
-      process.env.AUTH_SERVICE_PORT ?? '3001'
-    }`,
+    target: getServiceTarget('AUTH_SERVICE_URL', 'AUTH_SERVICE_HOST', 'AUTH_SERVICE_PORT', '3001'),
   },
   registration: {
     name: 'registration',
-    target: `http://${process.env.REGISTRATION_SERVICE_HOST ?? hostname}:${
-      process.env.REGISTRATION_SERVICE_PORT ?? '3003'
-    }`,
+    target: getServiceTarget(
+      'REGISTRATION_SERVICE_URL',
+      'REGISTRATION_SERVICE_HOST',
+      'REGISTRATION_SERVICE_PORT',
+      '3003',
+    ),
+  },
+  email: {
+    name: 'email',
+    target: getServiceTarget('EMAIL_SERVICE_URL', 'EMAIL_SERVICE_HOST', 'EMAIL_SERVICE_PORT', '3005'),
   },
   news: {
     name: 'news',
-    target: `http://${process.env.NEWS_SERVICE_HOST ?? hostname}:${
-      process.env.NEWS_SERVICE_PORT ?? '3002'
-    }`,
+    target: getServiceTarget('NEWS_SERVICE_URL', 'NEWS_SERVICE_HOST', 'NEWS_SERVICE_PORT', '3002'),
   },
   aiSummary: {
     name: 'ai-summary',
-    target: `http://${process.env.AI_SUMMARY_SERVICE_HOST ?? hostname}:${
-      process.env.AI_SUMMARY_SERVICE_PORT ?? '3004'
-    }`,
+    target: getServiceTarget(
+      'AI_SUMMARY_SERVICE_URL',
+      'AI_SUMMARY_SERVICE_HOST',
+      'AI_SUMMARY_SERVICE_PORT',
+      '3004',
+    ),
   },
 }
 
@@ -50,6 +66,10 @@ function pickService(pathname) {
 
   if (pathname.startsWith('/api/ai-summary')) {
     return services.aiSummary
+  }
+
+  if (pathname.startsWith('/api/email-connections') || pathname === '/api/google/callback') {
+    return services.email
   }
 
   return null

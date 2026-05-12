@@ -23,6 +23,10 @@ function getServiceDatabaseEnvName() {
     return 'AI_SUMMARY_DATABASE_URL'
   }
 
+  if (entrypoint.includes('/services/email/')) {
+    return 'EMAIL_DATABASE_URL'
+  }
+
   return 'GATEWAY_DATABASE_URL'
 }
 

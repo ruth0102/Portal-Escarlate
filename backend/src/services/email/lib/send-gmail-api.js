@@ -1,8 +1,8 @@
 import { google } from 'googleapis'
-import { getRequiredEnv } from '../env.js'
+import { getRequiredEnv } from '../../../lib/env.js'
+import { findActiveEmailConnection } from './email-connection-repo.js'
 
-function getSenderHeader() {
-  const address = getRequiredEnv('GOOGLE_SENDER_EMAIL')
+function getSenderHeader(address) {
   const name = process.env.EMAIL_FROM_NAME?.trim()
 
   if (!name) {
@@ -20,11 +20,11 @@ function toBase64Url(input) {
     .replace(/=+$/g, '')
 }
 
-function buildMimeMessage(input) {
+function buildMimeMessage(input, senderEmail) {
   const boundary = `portal-escarlate-${Date.now()}`
 
   return [
-    `From: ${getSenderHeader()}`,
+    `From: ${getSenderHeader(senderEmail)}`,
     `To: ${input.to}`,
     `Subject: ${input.subject}`,
     'MIME-Version: 1.0',
@@ -47,21 +47,31 @@ function buildMimeMessage(input) {
   ].join('\r\n')
 }
 
-function getOAuthClient() {
+function getOAuthClient(refreshToken) {
   const client = new google.auth.OAuth2(
     getRequiredEnv('GOOGLE_CLIENT_ID'),
     getRequiredEnv('GOOGLE_CLIENT_SECRET'),
   )
 
   client.setCredentials({
-    refresh_token: getRequiredEnv('GOOGLE_REFRESH_TOKEN'),
+    refresh_token: refreshToken,
   })
 
   return client
 }
 
 export async function sendGmailApiEmail(input) {
-  const auth = getOAuthClient()
+  const connection = await findActiveEmailConnection()
+
+  if (!connection) {
+    throw new Error('Nenhuma conexao de e-mail ativa foi encontrada.')
+  }
+
+  if (connection.provider !== 'gmail') {
+    throw new Error(`Provedor de e-mail nao suportado: ${connection.provider}`)
+  }
+
+  const auth = getOAuthClient(connection.refresh_token)
   const gmail = google.gmail({
     version: 'v1',
     auth,
@@ -70,7 +80,7 @@ export async function sendGmailApiEmail(input) {
   await gmail.users.messages.send({
     userId: 'me',
     requestBody: {
-      raw: toBase64Url(buildMimeMessage(input)),
+      raw: toBase64Url(buildMimeMessage(input, connection.email)),
     },
   })
 }

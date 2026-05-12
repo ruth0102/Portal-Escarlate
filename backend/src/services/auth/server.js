@@ -1,6 +1,13 @@
 import http from 'node:http'
 import { verifyPassword } from '../../lib/auth/password.js'
-import { findUserByEmailForAuth, toSessionUser } from '../../lib/auth/user-repo.js'
+import {
+  DuplicateEmailError,
+  createUser,
+  findUserByEmail,
+  findUserByEmailForAuth,
+  normalizeEmail,
+  toSessionUser,
+} from '../../lib/auth/user-repo.js'
 import { flattenFieldErrors, loginSchema } from '../../lib/auth/validation.js'
 import {
   buildExpiredSessionCookie,
@@ -12,6 +19,22 @@ import { getSessionUser } from '../../shared/http/session-user.js'
 
 const port = Number.parseInt(process.env.AUTH_SERVICE_PORT ?? '3001', 10)
 const hostname = process.env.HOST ?? '127.0.0.1'
+
+function validateInternalUserPayload(payload) {
+  if (!payload || typeof payload !== 'object') {
+    return 'Dados do usuario ausentes.'
+  }
+
+  if (typeof payload.email !== 'string' || !payload.email.trim()) {
+    return 'E-mail do usuario ausente.'
+  }
+
+  if (typeof payload.passwordHash !== 'string' || !payload.passwordHash.trim()) {
+    return 'Hash da senha ausente.'
+  }
+
+  return null
+}
 
 async function handleLogin(request, response) {
   let payload
@@ -58,6 +81,59 @@ async function handleLogin(request, response) {
   }
 }
 
+async function handleInternalUserExists(response, url) {
+  const email = url.searchParams.get('email')?.trim()
+
+  if (!email) {
+    json(response, 400, { message: 'E-mail ausente.' })
+    return
+  }
+
+  try {
+    const user = await findUserByEmail(email)
+
+    json(response, 200, { exists: Boolean(user) })
+  } catch (error) {
+    console.error('[auth-service] Failed to check internal user existence', error)
+    json(response, 500, { message: 'Nao foi possivel consultar o usuario.' })
+  }
+}
+
+async function handleInternalCreateUser(request, response) {
+  let payload
+
+  try {
+    payload = await readJson(request)
+  } catch {
+    json(response, 400, { message: 'Nao foi possivel ler os dados do usuario.' })
+    return
+  }
+
+  const errorMessage = validateInternalUserPayload(payload)
+
+  if (errorMessage) {
+    json(response, 400, { message: errorMessage })
+    return
+  }
+
+  try {
+    await createUser({
+      email: normalizeEmail(payload.email),
+      passwordHash: payload.passwordHash,
+    })
+
+    json(response, 201, { message: 'Usuario criado com sucesso.' })
+  } catch (error) {
+    if (error instanceof DuplicateEmailError) {
+      json(response, 409, { message: 'Ja existe uma conta com este e-mail.' })
+      return
+    }
+
+    console.error('[auth-service] Failed to create internal user', error)
+    json(response, 500, { message: 'Nao foi possivel criar o usuario.' })
+  }
+}
+
 async function route(request, response) {
   const url = new URL(request.url ?? '/', `http://${request.headers.host ?? `${hostname}:${port}`}`)
 
@@ -68,6 +144,16 @@ async function route(request, response) {
 
   if (request.method === 'GET' && url.pathname === '/health') {
     json(response, 200, { service: 'auth', status: 'ok' })
+    return
+  }
+
+  if (request.method === 'GET' && url.pathname === '/internal/auth/users/exists') {
+    await handleInternalUserExists(response, url)
+    return
+  }
+
+  if (request.method === 'POST' && url.pathname === '/internal/auth/users') {
+    await handleInternalCreateUser(request, response)
     return
   }
 

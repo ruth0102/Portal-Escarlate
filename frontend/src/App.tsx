@@ -1,6 +1,7 @@
 import { Navigate, Route, Routes, useLocation } from 'react-router-dom'
 import { AuthPortal } from './components/auth/AuthPortal'
 import { DashboardPage } from './pages/dashboard/DashboardPage'
+import { EmailConnectionsPage } from './pages/dashboard/EmailConnectionsPage'
 import { VerifyEmailPage } from './pages/verify-email/VerifyEmailPage'
 
 function HomePage() {
@@ -26,6 +27,7 @@ export function App() {
       <Route path="/login" element={<LoginPage />} />
       <Route path="/verify-email" element={<VerifyEmailPage />} />
       <Route path="/dashboard" element={<DashboardPage />} />
+      <Route path="/admin/email-connections" element={<EmailConnectionsPage />} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   )

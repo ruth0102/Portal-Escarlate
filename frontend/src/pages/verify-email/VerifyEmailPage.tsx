@@ -46,7 +46,7 @@ export function VerifyEmailPage() {
         }
 
         setState('success')
-        setMessage(payload.message ?? 'E-mail verificado com sucesso. Acesso liberado.')
+        setMessage(payload.message ?? 'E-mail verificado com sucesso. Agora faca login para acessar.')
       } catch (error) {
         if (controller.signal.aborted) {
           return
@@ -74,8 +74,8 @@ export function VerifyEmailPage() {
               : 'Codigo expirado ou invalido'}
         </h1>
         <p className={styles.copy}>{message}</p>
-        <Link className={styles.action} to={state === 'success' ? '/dashboard' : '/login'}>
-          {state === 'success' ? 'Continuar' : 'Voltar para login'}
+        <Link className={styles.action} to="/login">
+          {state === 'success' ? 'Ir para login' : 'Voltar para login'}
         </Link>
       </section>
     </main>

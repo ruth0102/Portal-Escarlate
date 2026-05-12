@@ -1,6 +1,5 @@
 import { randomBytes } from 'node:crypto'
 import { getAppUrl } from '../env.js'
-import { sendVerificationEmail } from '../email/send-verification-email.js'
 import { hashPassword } from './password.js'
 import { consumeRegisterRateLimit } from './register-rate-limit.js'
 import {
@@ -11,7 +10,7 @@ import {
   removePendingRegistrationByEmail,
   upsertPendingRegistration,
 } from './email-verification-token-repo.js'
-import { createUser, findUserByEmail, normalizeEmail, toSessionUser } from './user-repo.js'
+import { normalizeEmail } from './user-repo.js'
 
 function buildVerificationUrl(token) {
   return `${getAppUrl()}/verify-email?code=${encodeURIComponent(token)}`
@@ -19,6 +18,104 @@ function buildVerificationUrl(token) {
 
 function generateVerificationToken() {
   return randomBytes(32).toString('base64url')
+}
+
+function getEmailServiceUrl() {
+  if (process.env.EMAIL_SERVICE_URL) {
+    return process.env.EMAIL_SERVICE_URL.replace(/\/+$/g, '')
+  }
+
+  const host = process.env.EMAIL_SERVICE_HOST ?? process.env.HOST ?? '127.0.0.1'
+  const port = process.env.EMAIL_SERVICE_PORT ?? '3005'
+
+  return `http://${host}:${port}`
+}
+
+function getAuthServiceUrl() {
+  if (process.env.AUTH_SERVICE_URL) {
+    return process.env.AUTH_SERVICE_URL.replace(/\/+$/g, '')
+  }
+
+  const host = process.env.AUTH_SERVICE_HOST ?? process.env.HOST ?? '127.0.0.1'
+  const port = process.env.AUTH_SERVICE_PORT ?? '3001'
+
+  return `http://${host}:${port}`
+}
+
+async function requestVerificationEmail(input) {
+  const response = await fetch(new URL('/internal/email/verification', getEmailServiceUrl()), {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify(input),
+  })
+
+  if (response.ok) {
+    return
+  }
+
+  const payload = await response.json().catch(() => null)
+
+  throw new Error(payload?.message ?? 'Nao foi possivel solicitar o envio do e-mail.')
+}
+
+async function checkAuthUserExists(email) {
+  const url = new URL('/internal/auth/users/exists', getAuthServiceUrl())
+  url.searchParams.set('email', email)
+
+  const response = await fetch(url)
+  const payload = await response.json().catch(() => null)
+
+  if (!response.ok) {
+    throw new Error(payload?.message ?? 'Nao foi possivel consultar o usuario.')
+  }
+
+  return Boolean(payload?.exists)
+}
+
+async function requestAuthUserCreation(input) {
+  const response = await fetch(new URL('/internal/auth/users', getAuthServiceUrl()), {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify(input),
+  })
+
+  const payload = await response.json().catch(() => null)
+
+  if (!response.ok) {
+    return {
+      ok: false,
+      status: response.status,
+      message: payload?.message ?? 'Nao foi possivel criar o usuario.',
+    }
+  }
+
+  return {
+    ok: true,
+    status: response.status,
+    message: payload?.message ?? 'Usuario criado com sucesso.',
+  }
+}
+
+async function ensureAuthUserCreated(input) {
+  const created = await requestAuthUserCreation(input)
+
+  if (created.ok) {
+    return created
+  }
+
+  if (created.status === 409 && (await checkAuthUserExists(input.email))) {
+    return {
+      ok: true,
+      status: 200,
+      message: 'Usuario criado com sucesso.',
+    }
+  }
+
+  return created
 }
 
 export async function requestEmailVerification(input) {
@@ -36,7 +133,7 @@ export async function requestEmailVerification(input) {
     }
   }
 
-  const existingUser = await findUserByEmail(email)
+  const existingUser = await checkAuthUserExists(email)
 
   if (existingUser) {
     return {
@@ -58,7 +155,7 @@ export async function requestEmailVerification(input) {
   })
 
   try {
-    await sendVerificationEmail({
+    await requestVerificationEmail({
       to: email,
       verificationUrl: buildVerificationUrl(token),
     })
@@ -87,28 +184,27 @@ export async function verifyPendingEmailToken(code) {
     return { ok: false }
   }
 
+  const created = await ensureAuthUserCreated({
+    email: pending.email,
+    passwordHash: pending.password_hash,
+  })
+
+  if (!created.ok) {
+    return {
+      ok: false,
+      status: created.status,
+      message: created.message,
+    }
+  }
+
   const consumed = await consumePendingRegistration(pending.id)
 
   if (!consumed) {
     return { ok: false }
   }
 
-  const existingUser = await findUserByEmail(consumed.email)
-  let user = existingUser
-
-  if (!user) {
-    user = await createUser({
-      email: consumed.email,
-      passwordHash: consumed.password_hash,
-    })
-  }
-
-  if (!user) {
-    return { ok: false }
-  }
-
   return {
     ok: true,
-    user: toSessionUser(user),
+    message: created.message,
   }
 }

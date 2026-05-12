@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { NewsSearch } from './NewsSearch'
 import styles from './dashboard.module.css'
 
@@ -95,6 +95,11 @@ export function DashboardPage() {
               Permissoes aplicadas para organizar o acesso aos recursos editoriais e de
               pesquisa.
             </p>
+            {user?.role === 'admin' && (
+              <Link className={styles.adminButton} to="/admin/email-connections">
+                Conexoes
+              </Link>
+            )}
           </article>
 
           <article className={styles.cardWide}>

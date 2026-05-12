@@ -54,6 +54,46 @@
   letter-spacing: 0.22rem;
 }
 
+.actionLink,
+.adminButton,
+.dangerButton {
+  min-height: 44px;
+  padding: 0 18px;
+  border-radius: 12px;
+  border: 1px solid rgba(231, 197, 102, 0.32);
+  background: rgba(8, 3, 4, 0.45);
+  color: var(--gold-1);
+  cursor: pointer;
+  text-decoration: none;
+  text-transform: uppercase;
+  letter-spacing: 0.1rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.adminButton {
+  margin-top: 18px;
+}
+
+.dangerButton {
+  border-color: rgba(255, 126, 126, 0.42);
+  color: #ffc5c5;
+}
+
+.dangerButton:disabled,
+.actionLink:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.headerActions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
 .grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -95,6 +135,57 @@
   margin: 0;
   color: rgba(248, 237, 208, 0.72);
   line-height: 1.8;
+}
+
+.adminSummary,
+.connectionItem {
+  padding: 20px;
+  border-radius: 18px;
+  border: 1px solid rgba(231, 197, 102, 0.13);
+  background: rgba(0, 0, 0, 0.16);
+}
+
+.adminMessage,
+.adminError {
+  margin: 18px 0 0;
+  color: rgba(248, 237, 208, 0.8);
+  line-height: 1.6;
+}
+
+.adminError {
+  color: #ffb8b8;
+}
+
+.connectionToolbar {
+  display: flex;
+  justify-content: flex-end;
+  margin: 18px 0;
+}
+
+.connectionList {
+  display: grid;
+  gap: 12px;
+  margin-top: 18px;
+}
+
+.connectionItem {
+  display: flex;
+  justify-content: space-between;
+  gap: 18px;
+  align-items: center;
+}
+
+.connectionHealth {
+  margin: 8px 0 0;
+  color: rgba(248, 237, 208, 0.58);
+  line-height: 1.5;
+}
+
+.connectionActions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
 }
 
 .newsBox {
@@ -319,6 +410,15 @@
 
   .grid {
     grid-template-columns: 1fr;
+  }
+
+  .connectionItem {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .connectionActions {
+    justify-content: flex-start;
   }
 
   .cardWide {
