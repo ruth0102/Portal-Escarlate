@@ -19,6 +19,10 @@ function getServiceDatabaseEnvName() {
     return 'NEWS_DATABASE_URL'
   }
 
+  if (entrypoint.includes('/services/ai-summary/')) {
+    return 'AI_SUMMARY_DATABASE_URL'
+  }
+
   return 'GATEWAY_DATABASE_URL'
 }
 

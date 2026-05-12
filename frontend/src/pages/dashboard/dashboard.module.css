@@ -98,6 +98,7 @@
 }
 
 .newsBox {
+  scroll-margin-top: 18px;
   margin-top: 24px;
   padding-top: 20px;
   border-top: 1px solid rgba(231, 197, 102, 0.16);
@@ -152,7 +153,7 @@
   top: calc(100% + 6px);
   left: 0;
   right: 0;
-  z-index: 99;
+  z-index: 1000;
   overflow: hidden;
   border: 1px solid rgba(231, 197, 102, 0.2);
   border-radius: 14px;
@@ -211,6 +212,37 @@
   margin-top: 12px;
   color: rgba(248, 237, 208, 0.58);
   font-size: 0.9rem;
+}
+
+.aiSummaryBox {
+  margin-top: 16px;
+  padding: 18px;
+  border: 1px solid rgba(231, 197, 102, 0.2);
+  border-radius: 18px;
+  background:
+    linear-gradient(135deg, rgba(231, 197, 102, 0.08), rgba(120, 10, 16, 0.12)),
+    rgba(0, 0, 0, 0.18);
+}
+
+.aiSummaryLabel {
+  display: block;
+  margin-bottom: 10px;
+  color: rgba(248, 237, 208, 0.62);
+  font-size: 0.74rem;
+  letter-spacing: 0.18rem;
+  text-transform: uppercase;
+}
+
+.aiSummaryText,
+.aiSummaryError {
+  margin: 0;
+  color: rgba(248, 237, 208, 0.84);
+  line-height: 1.65;
+  white-space: pre-line;
+}
+
+.aiSummaryError {
+  color: #ffb8b8;
 }
 
 .newsList {

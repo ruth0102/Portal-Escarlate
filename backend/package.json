@@ -9,6 +9,7 @@
     "dev:auth": "node --env-file=../.env --watch src/services/auth/server.js",
     "dev:registration": "node --env-file=../.env --watch src/services/registration/server.js",
     "dev:news": "node --env-file=../.env --watch src/services/news/server.js",
+    "dev:ai-summary": "node --env-file=../.env --watch src/services/ai-summary/server.js",
     "start": "node --env-file=../.env src/server.js"
   },
   "dependencies": {

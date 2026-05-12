@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import styles from './dashboard.module.css'
 
@@ -21,6 +21,11 @@ type SearchResponse = {
 
 type SearchHistoryResponse = {
   queries?: string[]
+  message?: string
+}
+
+type AiSummaryResponse = {
+  summary?: string
   message?: string
 }
 
@@ -89,6 +94,7 @@ function mergeSearchHistory(primary: string[], secondary: string[]) {
 }
 
 export function NewsSearch() {
+  const newsSearchRef = useRef<HTMLDivElement | null>(null)
   const [query, setQuery] = useState('')
   const [activeQuery, setActiveQuery] = useState('')
   const [history, setHistory] = useState<string[]>([])
@@ -101,6 +107,9 @@ export function NewsSearch() {
   const [totalPages, setTotalPages] = useState(1)
   const [totalResults, setTotalResults] = useState(0)
   const [pageSize, setPageSize] = useState(20)
+  const [aiSummary, setAiSummary] = useState('')
+  const [aiSummaryLoading, setAiSummaryLoading] = useState(false)
+  const [aiSummaryError, setAiSummaryError] = useState('')
 
   const canSubmit = useMemo(() => query.trim().length >= 2 && !loading, [query, loading])
   const suggestions = useMemo(() => {
@@ -169,8 +178,57 @@ export function NewsSearch() {
     })
   }
 
+  async function summarizePage(input: { query: string; articles: NewsArticle[] }) {
+    const summarizableArticles = input.articles.filter(
+      (article) => article.title || article.description,
+    )
+
+    if (summarizableArticles.length === 0) {
+      setAiSummary('')
+      setAiSummaryError('')
+      return
+    }
+
+    setAiSummary('')
+    setAiSummaryError('')
+    setAiSummaryLoading(true)
+
+    try {
+      const response = await fetch('/api/ai-summary/news', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({
+          query: input.query,
+          articles: summarizableArticles.map((article) => ({
+            title: article.title,
+            description: article.description,
+            source: article.source,
+            publishedAt: article.publishedAt,
+          })),
+        }),
+      })
+
+      const data = (await response.json().catch(() => ({}))) as AiSummaryResponse
+
+      if (!response.ok) {
+        setAiSummaryError(data.message ?? 'Nao foi possivel gerar o resumo da pagina.')
+        return
+      }
+
+      setAiSummary(data.summary ?? '')
+    } catch {
+      setAiSummaryError('Servico de IA indisponivel para resumir esta pagina.')
+    } finally {
+      setAiSummaryLoading(false)
+    }
+  }
+
   async function searchNews(input: { query: string; page: number }) {
     setError('')
+    setAiSummary('')
+    setAiSummaryError('')
     setHasSearched(true)
     setLoading(true)
 
@@ -196,13 +254,16 @@ export function NewsSearch() {
         return
       }
 
-      setArticles(data.articles ?? [])
+      const nextArticles = data.articles ?? []
+
+      setArticles(nextArticles)
       setActiveQuery(input.query)
       rememberSearch(input.query)
       setPage(data.page ?? input.page)
       setTotalPages(data.totalPages ?? 1)
       setTotalResults(data.totalResults ?? 0)
       setPageSize(data.pageSize ?? 20)
+      void summarizePage({ query: input.query, articles: nextArticles })
     } catch {
       setArticles(previewArticles)
       setError('Backend de noticias ainda nao esta disponivel.')
@@ -232,10 +293,18 @@ export function NewsSearch() {
     }
 
     await searchNews({ query: queryToUse, page: normalizedPage })
+
+    window.history.replaceState(null, '', '#news-search')
+    window.requestAnimationFrame(() => {
+      newsSearchRef.current?.scrollIntoView({
+        behavior: 'smooth',
+        block: 'start',
+      })
+    })
   }
 
   return (
-    <div className={styles.newsBox}>
+    <div id="news-search" className={styles.newsBox} ref={newsSearchRef}>
       <form className={styles.newsForm} onSubmit={handleSubmit}>
         <label className={styles.newsLabel} htmlFor="news-query">
           Buscar noticias recentes
@@ -296,6 +365,23 @@ export function NewsSearch() {
             pagina
           </span>
         </div>
+      ) : null}
+
+      {hasSearched && !error ? (
+        <section className={styles.aiSummaryBox} aria-live="polite">
+          <span className={styles.aiSummaryLabel}>Sintese da pagina</span>
+          {aiSummaryLoading ? (
+            <p className={styles.aiSummaryText}>Gerando resumo central das noticias...</p>
+          ) : aiSummary ? (
+            <p className={styles.aiSummaryText}>{aiSummary}</p>
+          ) : aiSummaryError ? (
+            <p className={styles.aiSummaryError}>{aiSummaryError}</p>
+          ) : (
+            <p className={styles.aiSummaryText}>
+              A sintese sera exibida aqui quando houver noticias para resumir.
+            </p>
+          )}
+        </section>
       ) : null}
 
       {articles.length > 0 ? (

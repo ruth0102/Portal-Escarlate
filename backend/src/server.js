@@ -23,6 +23,12 @@ const services = {
       process.env.NEWS_SERVICE_PORT ?? '3002'
     }`,
   },
+  aiSummary: {
+    name: 'ai-summary',
+    target: `http://${process.env.AI_SUMMARY_SERVICE_HOST ?? hostname}:${
+      process.env.AI_SUMMARY_SERVICE_PORT ?? '3004'
+    }`,
+  },
 }
 
 function pickService(pathname) {
@@ -40,6 +46,10 @@ function pickService(pathname) {
 
   if (pathname.startsWith('/api/news')) {
     return services.news
+  }
+
+  if (pathname.startsWith('/api/ai-summary')) {
+    return services.aiSummary
   }
 
   return null

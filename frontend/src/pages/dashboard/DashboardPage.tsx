@@ -81,28 +81,28 @@ export function DashboardPage() {
             <span className={styles.label}>Conta ativa</span>
             <strong className={styles.value}>{user?.email}</strong>
             <p className={styles.copy}>
-              Sessao autenticada com JWT em cookie HttpOnly, usando a tabela `users` no
-              Supabase apenas pelo servidor.
+              Acesso liberado para acompanhar buscas, sinteses e historico de curadoria do
+              Portal Escarlate.
             </p>
           </article>
 
           <article className={styles.card}>
             <span className={styles.label}>Perfil</span>
-            <strong className={styles.value}>{user?.role}</strong>
+            <strong className={styles.value}>
+              {user?.role === 'admin' ? 'Administrador' : 'Usuario'}
+            </strong>
             <p className={styles.copy}>
-              O fluxo de entrada ja esta pronto para evoluir a autorizacao por papel sem
-              expor dados sensiveis ao cliente.
+              Permissoes aplicadas para organizar o acesso aos recursos editoriais e de
+              pesquisa.
             </p>
           </article>
 
           <article className={styles.cardWide}>
-            <span className={styles.label}>Proxima etapa</span>
-            <strong className={styles.value}>Curadoria e pesquisa documental</strong>
+            <span className={styles.label}>Central de pesquisa</span>
+            <strong className={styles.value}>Noticias, contexto e sintese editorial</strong>
             <p className={styles.copy}>
-              A home publica agora direciona o acesso. Daqui em diante, o passo natural e
-              conectar a area editorial, os filtros de noticias e a pesquisa em arquivos
-              publicos sobre contratos, votacoes, diarios oficiais e rastros relevantes de
-              poder.
+              Pesquise temas relevantes, navegue por resultados paginados e acompanhe uma
+              sintese objetiva da pagina atual.
             </p>
 
             <NewsSearch />
