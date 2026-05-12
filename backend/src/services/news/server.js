@@ -1,11 +1,15 @@
 import http from 'node:http'
+import {
+  createNewsSearchHistory,
+  listRecentNewsSearchQueries,
+} from '../../lib/news/search-history-repo.js'
 import { json, noContent, readJson } from '../../shared/http/json.js'
 import { getSessionUser } from '../../shared/http/session-user.js'
 
 const port = Number.parseInt(process.env.NEWS_SERVICE_PORT ?? '3002', 10)
 const hostname = process.env.HOST ?? '127.0.0.1'
 const NEWS_API_URL = 'https://newsapi.org/v2/everything'
-const MAX_RESULTS = 8
+const PAGE_SIZE = 20
 
 function sanitizeQuery(value) {
   if (typeof value !== 'string') {
@@ -13,6 +17,16 @@ function sanitizeQuery(value) {
   }
 
   return value.trim()
+}
+
+function sanitizePage(value) {
+  const parsed = Number.parseInt(String(value ?? '1'), 10)
+
+  if (!Number.isFinite(parsed) || parsed < 1) {
+    return 1
+  }
+
+  return parsed
 }
 
 async function handleNewsSearch(request, response) {
@@ -40,6 +54,7 @@ async function handleNewsSearch(request, response) {
   }
 
   const query = sanitizeQuery(payload?.query)
+  const page = sanitizePage(payload?.page)
 
   if (query.length < 2) {
     json(response, 400, { message: 'Digite ao menos 2 caracteres para buscar noticias.' })
@@ -50,7 +65,8 @@ async function handleNewsSearch(request, response) {
   url.searchParams.set('q', query)
   url.searchParams.set('language', 'pt')
   url.searchParams.set('sortBy', 'publishedAt')
-  url.searchParams.set('pageSize', String(MAX_RESULTS))
+  url.searchParams.set('pageSize', String(PAGE_SIZE))
+  url.searchParams.set('page', String(page))
 
   try {
     const responseFromApi = await fetch(url.toString(), {
@@ -77,14 +93,47 @@ async function handleNewsSearch(request, response) {
         source: article.source?.name ?? 'Fonte nao informada',
         publishedAt: article.publishedAt ?? '',
       })) ?? []
+    const filteredArticles = articles.filter((article) => article.url.length > 0)
+    const totalResults = typeof data.totalResults === 'number' ? data.totalResults : 0
+    const totalPages = Math.max(1, Math.ceil(totalResults / PAGE_SIZE))
+
+    await createNewsSearchHistory({
+      userEmail: sessionUser.email,
+      query,
+      totalResults,
+    })
 
     json(response, 200, {
-      totalResults: typeof data.totalResults === 'number' ? data.totalResults : 0,
-      articles: articles.filter((article) => article.url.length > 0),
+      totalResults,
+      totalPages,
+      page,
+      pageSize: PAGE_SIZE,
+      articles: filteredArticles,
     })
   } catch (error) {
     console.error('[news-service] News search failed', error)
     json(response, 500, { message: 'Nao foi possivel consultar noticias neste momento.' })
+  }
+}
+
+async function handleNewsSearchHistory(request, response) {
+  const sessionUser = getSessionUser(request)
+
+  if (!sessionUser) {
+    json(response, 401, { message: 'Sessao invalida. Faca login novamente.' })
+    return
+  }
+
+  try {
+    const queries = await listRecentNewsSearchQueries({
+      userEmail: sessionUser.email,
+      limit: 10,
+    })
+
+    json(response, 200, { queries })
+  } catch (error) {
+    console.error('[news-service] Failed to load search history', error)
+    json(response, 500, { message: 'Nao foi possivel carregar o historico de buscas.' })
   }
 }
 
@@ -98,6 +147,11 @@ async function route(request, response) {
 
   if (request.method === 'GET' && url.pathname === '/health') {
     json(response, 200, { service: 'news', status: 'ok' })
+    return
+  }
+
+  if (request.method === 'GET' && url.pathname === '/api/news/search/history') {
+    await handleNewsSearchHistory(request, response)
     return
   }
 
@@ -119,4 +173,3 @@ const server = http.createServer((request, response) => {
 server.listen(port, hostname, () => {
   console.log(`News service running at http://${hostname}:${port}`)
 })
-

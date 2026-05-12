@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import { SupabaseApiError, supabaseAdminRequest } from '../supabase.js'
+import { query } from '../db/postgres.js'
 
 const TOKENS_TABLE = 'email_verification_tokens'
 const DEFAULT_TTL_MS = 5 * 60 * 1000
@@ -24,78 +24,52 @@ export function getVerificationExpiryDate() {
 }
 
 export async function removePendingRegistrationByEmail(email) {
-  const query = new URLSearchParams({
-    email: `eq.${email}`,
-    consumed_at: 'is.null',
-  })
-
-  await supabaseAdminRequest(`${TOKENS_TABLE}?${query.toString()}`, {
-    method: 'DELETE',
-  })
+  await query(
+    `delete from ${TOKENS_TABLE}
+      where email = $1
+        and consumed_at is null`,
+    [email],
+  )
 }
 
 export async function upsertPendingRegistration(input) {
   await removePendingRegistrationByEmail(input.email)
 
-  const rows = await supabaseAdminRequest(
-    `${TOKENS_TABLE}?select=id,email,password_hash,token_hash,expires_at,consumed_at`,
-    {
-      method: 'POST',
-      headers: {
-        Prefer: 'return=representation',
-      },
-      body: JSON.stringify({
-        email: input.email,
-        password_hash: input.passwordHash,
-        token_hash: input.tokenHash,
-        expires_at: input.expiresAt,
-      }),
-    },
+  const result = await query(
+    `insert into ${TOKENS_TABLE} (email, password_hash, token_hash, expires_at)
+     values ($1, $2, $3, $4)
+     returning id, email, password_hash, token_hash, expires_at, consumed_at`,
+    [input.email, input.passwordHash, input.tokenHash, input.expiresAt],
   )
 
-  return rows[0] ?? null
+  return result.rows[0] ?? null
 }
 
 export async function findPendingRegistrationByTokenHash(tokenHash) {
-  const query = new URLSearchParams({
-    select: 'id,email,password_hash,token_hash,expires_at,consumed_at',
-    token_hash: `eq.${tokenHash}`,
-    limit: '1',
-  })
+  const result = await query(
+    `select id, email, password_hash, token_hash, expires_at, consumed_at
+       from ${TOKENS_TABLE}
+      where token_hash = $1
+      limit 1`,
+    [tokenHash],
+  )
 
-  const rows = await supabaseAdminRequest(`${TOKENS_TABLE}?${query.toString()}`, {
-    method: 'GET',
-  })
-
-  return rows[0] ?? null
+  return result.rows[0] ?? null
 }
 
 export async function consumePendingRegistration(id) {
   try {
-    const query = new URLSearchParams({
-      id: `eq.${id}`,
-      consumed_at: 'is.null',
-    })
-
-    const rows = await supabaseAdminRequest(
-      `${TOKENS_TABLE}?select=id,email,password_hash,token_hash,expires_at,consumed_at&${query.toString()}`,
-      {
-        method: 'PATCH',
-        headers: {
-          Prefer: 'return=representation',
-        },
-        body: JSON.stringify({
-          consumed_at: new Date().toISOString(),
-        }),
-      },
+    const result = await query(
+      `update ${TOKENS_TABLE}
+          set consumed_at = now()
+        where id = $1
+          and consumed_at is null
+      returning id, email, password_hash, token_hash, expires_at, consumed_at`,
+      [id],
     )
 
-    return rows[0] ?? null
+    return result.rows[0] ?? null
   } catch (error) {
-    if (error instanceof SupabaseApiError) {
-      throw new Error(`Failed to consume verification token: ${error.message}`)
-    }
-
-    throw error
+    throw new Error(`Failed to consume verification token: ${error.message}`)
   }
 }

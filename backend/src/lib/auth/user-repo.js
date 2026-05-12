@@ -1,4 +1,4 @@
-import { SupabaseApiError, supabaseAdminRequest } from '../supabase.js'
+import { query } from '../db/postgres.js'
 
 const USERS_TABLE = 'users_2'
 
@@ -15,28 +15,22 @@ export function normalizeEmail(email) {
 
 async function findFirstByEmail(select, email) {
   const normalizedEmail = normalizeEmail(email)
-  const query = new URLSearchParams({
-    select,
-    email: `eq.${normalizedEmail}`,
-    limit: '1',
-  })
+  const result = await query(
+    `select ${select}
+       from ${USERS_TABLE}
+      where email = $1
+      limit 1`,
+    [normalizedEmail],
+  )
 
-  const rows = await supabaseAdminRequest(`${USERS_TABLE}?${query.toString()}`, {
-    method: 'GET',
-  })
-
-  return rows[0] ?? null
+  return result.rows[0] ?? null
 }
 
 export async function findUserByEmailForAuth(email) {
   try {
     return await findFirstByEmail('id,email,password,role,created_at', email)
   } catch (error) {
-    if (error instanceof SupabaseApiError) {
-      throw new Error(`Failed to fetch user for auth: ${error.message}`)
-    }
-
-    throw error
+    throw new Error(`Failed to fetch user for auth: ${error.message}`)
   }
 }
 
@@ -44,39 +38,26 @@ export async function findUserByEmail(email) {
   try {
     return await findFirstByEmail('id,email,role,created_at', email)
   } catch (error) {
-    if (error instanceof SupabaseApiError) {
-      throw new Error(`Failed to fetch public user data: ${error.message}`)
-    }
-
-    throw error
+    throw new Error(`Failed to fetch public user data: ${error.message}`)
   }
 }
 
 export async function createUser(input) {
   try {
-    const rows = await supabaseAdminRequest(`${USERS_TABLE}?select=id,email,role,created_at`, {
-      method: 'POST',
-      headers: {
-        Prefer: 'return=representation',
-      },
-      body: JSON.stringify({
-        email: normalizeEmail(input.email),
-        password: input.passwordHash,
-        role: 'user',
-      }),
-    })
+    const result = await query(
+      `insert into ${USERS_TABLE} (email, password, role)
+       values ($1, $2, 'user')
+       returning id, email, role, created_at`,
+      [normalizeEmail(input.email), input.passwordHash],
+    )
 
-    return rows[0] ?? null
+    return result.rows[0] ?? null
   } catch (error) {
-    if (error instanceof SupabaseApiError && error.code === '23505') {
+    if (error.code === '23505') {
       throw new DuplicateEmailError()
     }
 
-    if (error instanceof SupabaseApiError) {
-      throw new Error(`Failed to create user: ${error.message}`)
-    }
-
-    throw error
+    throw new Error(`Failed to create user: ${error.message}`)
   }
 }
 
