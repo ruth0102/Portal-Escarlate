@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { AuthForm, type AuthMessage } from './AuthForm'
 import { loginSchema } from '../../lib/auth/validation'
 import styles from './AuthPortal.module.css'
@@ -39,8 +39,11 @@ export function LoginForm({ active, initialNotice }: LoginFormProps) {
             <input type="checkbox" name="remember" />
             <span>Manter acesso ativo</span>
           </label>
-          <span className={styles.textLink} aria-disabled="true">
-            Recuperacao em breve
+          <Link className={styles.textLink} to="/termos-de-uso">
+            Termos de uso
+          </Link>
+          <span className={styles.privacyNotice}>
+            Ao entrar, voce concorda com as politicas de coleta e uso de dados.
           </span>
         </>
       }

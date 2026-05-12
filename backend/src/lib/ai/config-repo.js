@@ -1,6 +1,6 @@
 import { query } from '../db/postgres.js'
 
-export async function listActiveAiConfigs() {
+async function listActiveAiConfigsFromTables(apiKeysTable, modelsTable) {
   const result = await query(
     `select
        keys.id as api_key_id,
@@ -8,8 +8,8 @@ export async function listActiveAiConfigs() {
        keys.label,
        keys.api_key,
        models.model
-     from ai_summary_api_keys keys
-     join ai_summary_models models
+     from ${apiKeysTable} keys
+     join ${modelsTable} models
        on models.api_key_id = keys.id
      where keys.active = true
        and models.active = true
@@ -40,4 +40,16 @@ export async function listActiveAiConfigs() {
   }
 
   return configs
+}
+
+export async function listActiveAiConfigs() {
+  try {
+    return await listActiveAiConfigsFromTables('ai_api_keys', 'ai_models')
+  } catch (error) {
+    if (error.code !== '42P01') {
+      throw error
+    }
+
+    return listActiveAiConfigsFromTables('ai_summary_api_keys', 'ai_summary_models')
+  }
 }

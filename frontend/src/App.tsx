@@ -2,6 +2,8 @@ import { Navigate, Route, Routes, useLocation } from 'react-router-dom'
 import { AuthPortal } from './components/auth/AuthPortal'
 import { DashboardPage } from './pages/dashboard/DashboardPage'
 import { EmailConnectionsPage } from './pages/dashboard/EmailConnectionsPage'
+import { NewsMetricsPage } from './pages/dashboard/NewsMetricsPage'
+import { TermsPage } from './pages/terms/TermsPage'
 import { VerifyEmailPage } from './pages/verify-email/VerifyEmailPage'
 
 function HomePage() {
@@ -25,9 +27,11 @@ export function App() {
     <Routes>
       <Route path="/" element={<HomePage />} />
       <Route path="/login" element={<LoginPage />} />
+      <Route path="/termos-de-uso" element={<TermsPage />} />
       <Route path="/verify-email" element={<VerifyEmailPage />} />
       <Route path="/dashboard" element={<DashboardPage />} />
       <Route path="/admin/email-connections" element={<EmailConnectionsPage />} />
+      <Route path="/admin/news-metrics" element={<NewsMetricsPage />} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   )

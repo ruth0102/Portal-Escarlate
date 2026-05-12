@@ -73,6 +73,13 @@
 }
 
 .adminButton {
+  margin-top: 0;
+}
+
+.adminButtonGroup {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
   margin-top: 18px;
 }
 
@@ -186,6 +193,78 @@
   gap: 8px;
   flex-wrap: wrap;
   justify-content: flex-end;
+}
+
+.metricsGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+  margin-top: 18px;
+}
+
+.metricPanel {
+  padding: 20px;
+  border-radius: 18px;
+  border: 1px solid rgba(231, 197, 102, 0.13);
+  background: rgba(0, 0, 0, 0.16);
+}
+
+.metricRows {
+  display: grid;
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.metricRow {
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+}
+
+.metricRow:not(:disabled) {
+  cursor: pointer;
+}
+
+.metricRowHeader {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  color: rgba(248, 237, 208, 0.84);
+  font-size: 0.95rem;
+}
+
+.metricRowHeader span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.metricTrack {
+  height: 10px;
+  margin-top: 8px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(248, 237, 208, 0.1);
+}
+
+.metricBar {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, rgba(231, 197, 102, 0.86), rgba(185, 28, 28, 0.78));
+}
+
+.metricSecondary {
+  display: block;
+  margin-top: 6px;
+  color: rgba(248, 237, 208, 0.56);
+  font-size: 0.86rem;
+}
+
+.metricRowSelected .metricRowHeader {
+  color: var(--gold-1);
 }
 
 .newsBox {
@@ -419,6 +498,10 @@
 
   .connectionActions {
     justify-content: flex-start;
+  }
+
+  .metricsGrid {
+    grid-template-columns: 1fr;
   }
 
   .cardWide {

@@ -36,13 +36,22 @@ const services = {
     name: 'news',
     target: getServiceTarget('NEWS_SERVICE_URL', 'NEWS_SERVICE_HOST', 'NEWS_SERVICE_PORT', '3002'),
   },
-  aiSummary: {
-    name: 'ai-summary',
+  ai: {
+    name: 'ai',
     target: getServiceTarget(
-      'AI_SUMMARY_SERVICE_URL',
-      'AI_SUMMARY_SERVICE_HOST',
-      'AI_SUMMARY_SERVICE_PORT',
+      'AI_SERVICE_URL',
+      'AI_SERVICE_HOST',
+      'AI_SERVICE_PORT',
       '3004',
+    ),
+  },
+  newsSummary: {
+    name: 'news-summary',
+    target: getServiceTarget(
+      'NEWS_SUMMARY_SERVICE_URL',
+      'NEWS_SUMMARY_SERVICE_HOST',
+      'NEWS_SUMMARY_SERVICE_PORT',
+      '3006',
     ),
   },
 }
@@ -60,12 +69,20 @@ function pickService(pathname) {
     return services.auth
   }
 
+  if (
+    pathname === '/api/news-summary' ||
+    pathname === '/api/ai/news-summary' ||
+    pathname === '/api/ai-summary/news'
+  ) {
+    return services.newsSummary
+  }
+
   if (pathname.startsWith('/api/news')) {
     return services.news
   }
 
-  if (pathname.startsWith('/api/ai-summary')) {
-    return services.aiSummary
+  if (pathname.startsWith('/api/ai')) {
+    return services.ai
   }
 
   if (pathname.startsWith('/api/email-connections') || pathname === '/api/google/callback') {

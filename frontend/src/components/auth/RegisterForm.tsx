@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { Link } from 'react-router-dom'
 import { AuthForm, type AuthMessage } from './AuthForm'
 import { registerSchema } from '../../lib/auth/validation'
 import styles from './AuthPortal.module.css'
@@ -28,11 +29,11 @@ export function RegisterForm({ active }: RegisterFormProps) {
         <>
           <label className={styles.checkline}>
             <input type="checkbox" name="terms" required defaultChecked />
-            <span>Aceito os termos de acesso</span>
+            <span>Aceito os termos de acesso e coleta de dados</span>
           </label>
-          <span className={styles.textLink} aria-disabled="true">
+          <Link className={styles.textLink} to="/termos-de-uso">
             Ler condicoes
-          </span>
+          </Link>
         </>
       }
       onSubmit={async (event) => {

@@ -43,6 +43,10 @@ const previewArticles: NewsArticle[] = [
 const SEARCH_HISTORY_KEY = 'portal-escarlate:news-search-history'
 const MAX_HISTORY_ITEMS = 10
 
+export function clearNewsSearchHistoryStorage() {
+  window.localStorage.removeItem(SEARCH_HISTORY_KEY)
+}
+
 function formatPublishedAt(value: string) {
   if (!value) {
     return 'Horario nao informado'
@@ -194,7 +198,7 @@ export function NewsSearch() {
     setAiSummaryLoading(true)
 
     try {
-      const response = await fetch('/api/ai-summary/news', {
+      const response = await fetch('/api/news-summary', {
         method: 'POST',
         headers: {
           'content-type': 'application/json',
@@ -210,10 +214,12 @@ export function NewsSearch() {
         }),
       })
 
-      const data = (await response.json().catch(() => ({}))) as AiSummaryResponse
+      const data = (await response.json().catch(() => ({}))) as AiSummaryResponse & {
+        error?: string
+      }
 
       if (!response.ok) {
-        setAiSummaryError(data.message ?? 'Nao foi possivel gerar o resumo da pagina.')
+        setAiSummaryError(data.message ?? data.error ?? 'Nao foi possivel gerar o resumo da pagina.')
         return
       }
 
@@ -225,7 +231,7 @@ export function NewsSearch() {
     }
   }
 
-  async function searchNews(input: { query: string; page: number }) {
+  async function searchNews(input: { query: string; page: number; isSearch: boolean }) {
     setError('')
     setAiSummary('')
     setAiSummaryError('')
@@ -238,7 +244,11 @@ export function NewsSearch() {
         headers: {
           'content-type': 'application/json',
         },
-        body: JSON.stringify({ query: input.query, page: input.page }),
+        body: JSON.stringify({
+          query: input.query,
+          page: input.page,
+          isSearch: input.isSearch,
+        }),
       })
 
       const data = (await response.json().catch(() => ({}))) as SearchResponse
@@ -275,13 +285,13 @@ export function NewsSearch() {
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     setSuggestionsOpen(false)
-    await searchNews({ query: query.trim(), page: 1 })
+    await searchNews({ query: query.trim(), page: 1, isSearch: true })
   }
 
   async function selectSuggestion(value: string) {
     setQuery(value)
     setSuggestionsOpen(false)
-    await searchNews({ query: value, page: 1 })
+    await searchNews({ query: value, page: 1, isSearch: true })
   }
 
   async function goToPage(nextPage: number) {
@@ -292,7 +302,7 @@ export function NewsSearch() {
       return
     }
 
-    await searchNews({ query: queryToUse, page: normalizedPage })
+    await searchNews({ query: queryToUse, page: normalizedPage, isSearch: false })
 
     window.history.replaceState(null, '', '#news-search')
     window.requestAnimationFrame(() => {

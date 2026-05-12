@@ -22,9 +22,14 @@ const processes = [
     args: ['--env-file=../.env', '--watch', 'src/services/email/server.js'],
   },
   {
-    name: 'ai-summary-service',
+    name: 'ai-service',
     command: process.execPath,
-    args: ['--env-file=../.env', '--watch', 'src/services/ai-summary/server.js'],
+    args: ['--env-file=../.env', '--watch', 'src/services/ai/server.js'],
+  },
+  {
+    name: 'news-summary-service',
+    command: process.execPath,
+    args: ['--env-file=../.env', '--watch', 'src/services/news-summary/server.js'],
   },
   {
     name: 'gateway',

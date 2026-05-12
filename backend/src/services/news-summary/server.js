@@ -1,11 +1,20 @@
 import http from 'node:http'
-import { listActiveAiConfigs } from '../../lib/ai-summary/config-repo.js'
 import { json, noContent, readJson } from '../../shared/http/json.js'
 import { getSessionUser } from '../../shared/http/session-user.js'
 
-const port = Number.parseInt(process.env.AI_SUMMARY_SERVICE_PORT ?? '3004', 10)
+const port = Number.parseInt(process.env.NEWS_SUMMARY_SERVICE_PORT ?? '3006', 10)
 const hostname = process.env.HOST ?? '127.0.0.1'
-const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions'
+
+function getAiServiceUrl() {
+  if (process.env.AI_SERVICE_URL) {
+    return process.env.AI_SERVICE_URL.replace(/\/+$/g, '')
+  }
+
+  const host = process.env.AI_SERVICE_HOST ?? process.env.HOST ?? '127.0.0.1'
+  const servicePort = process.env.AI_SERVICE_PORT ?? '3004'
+
+  return `http://${host}:${servicePort}`
+}
 
 function sanitizeArticle(article, index) {
   return [
@@ -17,7 +26,7 @@ function sanitizeArticle(article, index) {
   ].join('\n')
 }
 
-function buildPrompt(input) {
+function buildNewsSummaryPrompt(input) {
   const articlesText = input.articles.map(sanitizeArticle).join('\n\n')
 
   return [
@@ -38,7 +47,7 @@ function buildPrompt(input) {
   ].join('\n')
 }
 
-function cleanSummary(value) {
+function cleanPlainText(value) {
   return value
     .replace(/^#{1,6}\s+/gm, '')
     .replace(/^\s*[-*+]\s+/gm, '')
@@ -51,17 +60,13 @@ function cleanSummary(value) {
     .trim()
 }
 
-async function requestOpenRouterSummary(input) {
-  const openRouterResponse = await fetch(OPENROUTER_URL, {
+async function requestAiSummary(input) {
+  const response = await fetch(new URL('/internal/ai/chat', getAiServiceUrl()), {
     method: 'POST',
     headers: {
-      Authorization: `Bearer ${input.apiKey}`,
-      'Content-Type': 'application/json',
-      'HTTP-Referer': process.env.APP_URL ?? 'http://localhost:5173',
-      'X-Title': 'Portal Escarlate',
+      'content-type': 'application/json',
     },
     body: JSON.stringify({
-      model: input.model,
       messages: [
         {
           role: 'system',
@@ -70,71 +75,28 @@ async function requestOpenRouterSummary(input) {
         },
         {
           role: 'user',
-          content: buildPrompt({
-            query: input.query,
-            articles: input.articles,
-          }),
+          content: buildNewsSummaryPrompt(input),
         },
       ],
       temperature: 0.3,
     }),
   })
 
-  const data = await openRouterResponse.json().catch(() => ({}))
+  const payload = await response.json().catch(() => null)
 
-  if (!openRouterResponse.ok) {
-    throw new Error(data?.error?.message ?? `OpenRouter failed with status ${openRouterResponse.status}`)
+  if (!response.ok) {
+    throw new Error(payload?.message ?? 'Nao foi possivel completar a requisicao de IA.')
   }
 
-  const summary = data?.choices?.[0]?.message?.content
-
-  if (typeof summary !== 'string' || summary.trim().length === 0) {
+  if (typeof payload?.content !== 'string') {
     throw new Error('A IA nao retornou um resumo valido.')
   }
 
-  return cleanSummary(summary)
+  return payload
 }
 
-async function summarizeWithFallback(input) {
-  const configs = await listActiveAiConfigs()
-  let lastError
-
-  for (const config of configs) {
-    if (config.provider !== 'openrouter') {
-      continue
-    }
-
-    for (const model of config.models) {
-      try {
-        return await requestOpenRouterSummary({
-          apiKey: config.apiKey,
-          model,
-          query: input.query,
-          articles: input.articles,
-        })
-      } catch (error) {
-        lastError = error
-        console.error('[ai-summary-service] AI config failed', {
-          provider: config.provider,
-          label: config.label,
-          model,
-          message: error instanceof Error ? error.message : 'Unknown error',
-        })
-      }
-    }
-  }
-
-  if (lastError instanceof Error) {
-    throw lastError
-  }
-
-  throw new Error('Nenhuma chave/modelo ativo configurado para IA.')
-}
-
-async function summarizeArticles(request, response) {
-  const sessionUser = getSessionUser(request)
-
-  if (!sessionUser) {
+async function handleNewsSummary(request, response) {
+  if (!getSessionUser(request)) {
     json(response, 401, { message: 'Sessao invalida. Faca login novamente.' })
     return
   }
@@ -157,12 +119,18 @@ async function summarizeArticles(request, response) {
   }
 
   try {
-    const summary = await summarizeWithFallback({ query, articles })
+    const aiResult = await requestAiSummary({ query, articles })
 
-    json(response, 200, { summary })
+    json(response, 200, {
+      summary: cleanPlainText(aiResult.content),
+      provider: aiResult.provider,
+      model: aiResult.model,
+    })
   } catch (error) {
-    console.error('[ai-summary-service] Failed to summarize articles', error)
-    json(response, 500, { message: 'Nao foi possivel gerar o resumo agora.' })
+    console.error('[news-summary-service] Failed to summarize news', error)
+    json(response, 500, {
+      message: error instanceof Error ? error.message : 'Nao foi possivel gerar o resumo agora.',
+    })
   }
 }
 
@@ -175,12 +143,17 @@ async function route(request, response) {
   }
 
   if (request.method === 'GET' && url.pathname === '/health') {
-    json(response, 200, { service: 'ai-summary', status: 'ok' })
+    json(response, 200, { service: 'news-summary', status: 'ok' })
     return
   }
 
-  if (request.method === 'POST' && url.pathname === '/api/ai-summary/news') {
-    await summarizeArticles(request, response)
+  if (
+    request.method === 'POST' &&
+    (url.pathname === '/api/news-summary' ||
+      url.pathname === '/api/ai/news-summary' ||
+      url.pathname === '/api/ai-summary/news')
+  ) {
+    await handleNewsSummary(request, response)
     return
   }
 
@@ -189,11 +162,11 @@ async function route(request, response) {
 
 const server = http.createServer((request, response) => {
   route(request, response).catch((error) => {
-    console.error('[ai-summary-service] Unhandled error', error)
-    json(response, 500, { message: 'Erro interno do servico de sintese por IA.' })
+    console.error('[news-summary-service] Unhandled error', error)
+    json(response, 500, { message: 'Erro interno do servico de resumo de noticias.' })
   })
 })
 
 server.listen(port, hostname, () => {
-  console.log(`AI summary service running at http://${hostname}:${port}`)
+  console.log(`News summary service running at http://${hostname}:${port}`)
 })

@@ -41,7 +41,6 @@ function getHealthLabel(status: string) {
 export function EmailConnectionsPage() {
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
-  const [user, setUser] = useState<SessionUser | null>(null)
   const [connections, setConnections] = useState<EmailConnection[]>([])
   const [loading, setLoading] = useState(true)
   const [busyId, setBusyId] = useState<string | null>(null)
@@ -101,7 +100,6 @@ export function EmailConnectionsPage() {
           return
         }
 
-        setUser(sessionPayload.user)
         await loadConnections(controller.signal)
       } catch (loadError) {
         if (!controller.signal.aborted) {
@@ -244,11 +242,6 @@ export function EmailConnectionsPage() {
               Conectar Google
             </button>
           </div>
-        </div>
-
-        <div className={styles.adminSummary}>
-          <span className={styles.label}>Administrador</span>
-          <strong className={styles.value}>{user?.email}</strong>
         </div>
 
         {(googleMessage || message || error) && (

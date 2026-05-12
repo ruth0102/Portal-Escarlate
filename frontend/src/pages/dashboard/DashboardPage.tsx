@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { NewsSearch } from './NewsSearch'
+import { NewsSearch, clearNewsSearchHistoryStorage } from './NewsSearch'
 import styles from './dashboard.module.css'
 
 type SessionUser = {
@@ -48,6 +48,7 @@ export function DashboardPage() {
 
   async function handleLogout() {
     await fetch('/api/auth/logout', { method: 'POST' }).catch(() => undefined)
+    clearNewsSearchHistoryStorage()
     navigate('/', { replace: true })
   }
 
@@ -96,9 +97,14 @@ export function DashboardPage() {
               pesquisa.
             </p>
             {user?.role === 'admin' && (
-              <Link className={styles.adminButton} to="/admin/email-connections">
-                Conexoes
-              </Link>
+              <div className={styles.adminButtonGroup}>
+                <Link className={styles.adminButton} to="/admin/email-connections">
+                  Conexoes
+                </Link>
+                <Link className={styles.adminButton} to="/admin/news-metrics">
+                  Metricas
+                </Link>
+              </div>
             )}
           </article>
 

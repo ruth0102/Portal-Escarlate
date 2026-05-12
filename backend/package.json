@@ -10,7 +10,9 @@
     "dev:registration": "node --env-file=../.env --watch src/services/registration/server.js",
     "dev:email": "node --env-file=../.env --watch src/services/email/server.js",
     "dev:news": "node --env-file=../.env --watch src/services/news/server.js",
-    "dev:ai-summary": "node --env-file=../.env --watch src/services/ai-summary/server.js",
+    "dev:ai": "node --env-file=../.env --watch src/services/ai/server.js",
+    "dev:ai-summary": "npm run dev:news-summary",
+    "dev:news-summary": "node --env-file=../.env --watch src/services/news-summary/server.js",
     "start": "node --env-file=../.env src/server.js"
   },
   "dependencies": {
