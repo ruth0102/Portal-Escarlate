@@ -24,7 +24,7 @@ type EmailConnection = {
 
 function getHealthLabel(status: string) {
   if (status === 'valid') {
-    return 'Valida'
+    return 'Válida'
   }
 
   if (status === 'expired') {
@@ -35,7 +35,7 @@ function getHealthLabel(status: string) {
     return 'Inativa'
   }
 
-  return 'Indisponivel'
+  return 'Indisponível'
 }
 
 export function EmailConnectionsPage() {
@@ -51,15 +51,15 @@ export function EmailConnectionsPage() {
 
   const googleMessage = useMemo(() => {
     if (googleStatus === 'connected') {
-      return 'Conexao Google cadastrada com sucesso.'
+      return 'Conexão Google cadastrada com sucesso.'
     }
 
     if (googleStatus === 'failed') {
-      return 'Nao foi possivel concluir a conexao com o Google.'
+      return 'Não foi possível concluir a conexão com o Google.'
     }
 
     if (googleStatus === 'invalid') {
-      return 'A conexao Google expirou ou nao foi autorizada.'
+      return 'A conexão Google expirou ou não foi autorizada.'
     }
 
     return ''
@@ -73,7 +73,7 @@ export function EmailConnectionsPage() {
     }
 
     if (!response.ok) {
-      throw new Error(payload.message ?? 'Nao foi possivel carregar as conexoes.')
+      throw new Error(payload.message ?? 'Não foi possível carregar as conexões.')
     }
 
     setConnections(payload.connections ?? [])
@@ -103,7 +103,7 @@ export function EmailConnectionsPage() {
         await loadConnections(controller.signal)
       } catch (loadError) {
         if (!controller.signal.aborted) {
-          setError(loadError instanceof Error ? loadError.message : 'Falha ao carregar conexoes.')
+          setError(loadError instanceof Error ? loadError.message : 'Falha ao carregar conexões.')
         }
       } finally {
         if (!controller.signal.aborted) {
@@ -131,7 +131,7 @@ export function EmailConnectionsPage() {
       }
 
       if (!response.ok || !payload.url) {
-        throw new Error(payload.message ?? 'Nao foi possivel iniciar a conexao Google.')
+        throw new Error(payload.message ?? 'Não foi possível iniciar a conexão Google.')
       }
 
       window.location.assign(payload.url)
@@ -139,7 +139,7 @@ export function EmailConnectionsPage() {
       setError(
         connectError instanceof Error
           ? connectError.message
-          : 'Nao foi possivel iniciar a conexao Google.',
+          : 'Não foi possível iniciar a conexão Google.',
       )
     }
   }
@@ -150,12 +150,12 @@ export function EmailConnectionsPage() {
 
     try {
       await loadConnections()
-      setMessage('Status das conexoes atualizado.')
+      setMessage('Status das conexões atualizado.')
     } catch (refreshError) {
       setError(
         refreshError instanceof Error
           ? refreshError.message
-          : 'Nao foi possivel atualizar as conexoes.',
+          : 'Não foi possível atualizar as conexões.',
       )
     }
   }
@@ -177,7 +177,7 @@ export function EmailConnectionsPage() {
       const payload = (await response.json().catch(() => ({}))) as { message?: string }
 
       if (!response.ok) {
-        throw new Error(payload.message ?? 'Nao foi possivel alterar a prioridade.')
+        throw new Error(payload.message ?? 'Não foi possível alterar a prioridade.')
       }
 
       await loadConnections()
@@ -186,7 +186,7 @@ export function EmailConnectionsPage() {
       setError(
         priorityError instanceof Error
           ? priorityError.message
-          : 'Nao foi possivel alterar a prioridade.',
+          : 'Não foi possível alterar a prioridade.',
       )
     } finally {
       setBusyId(null)
@@ -194,7 +194,7 @@ export function EmailConnectionsPage() {
   }
 
   async function handleDelete(connection: EmailConnection) {
-    const confirmed = window.confirm(`Remover a conexao ${connection.email}?`)
+    const confirmed = window.confirm(`Remover a conexão ${connection.email}?`)
 
     if (!confirmed) {
       return
@@ -211,14 +211,14 @@ export function EmailConnectionsPage() {
 
       if (!response.ok) {
         const payload = (await response.json().catch(() => ({}))) as { message?: string }
-        throw new Error(payload.message ?? 'Nao foi possivel remover a conexao.')
+        throw new Error(payload.message ?? 'Não foi possível remover a conexão.')
       }
 
       await loadConnections()
-      setMessage('Conexao removida.')
+      setMessage('Conexão removida.')
     } catch (deleteError) {
       setError(
-        deleteError instanceof Error ? deleteError.message : 'Nao foi possivel remover a conexao.',
+        deleteError instanceof Error ? deleteError.message : 'Não foi possível remover a conexão.',
       )
     } finally {
       setBusyId(null)
@@ -230,8 +230,8 @@ export function EmailConnectionsPage() {
       <section className={styles.panel}>
         <div className={styles.header}>
           <div>
-            <span className={styles.kicker}>Administracao</span>
-            <h1 className={styles.title}>Conexoes de e-mail</h1>
+            <span className={styles.kicker}>Administração</span>
+            <h1 className={styles.title}>Conexões de e-mail</h1>
           </div>
 
           <div className={styles.headerActions}>
@@ -252,14 +252,14 @@ export function EmailConnectionsPage() {
 
         <div className={styles.connectionToolbar}>
           <button className={styles.newsButton} type="button" onClick={handleRefresh}>
-            Testar conexoes
+            Testar conexões
           </button>
         </div>
 
         {loading ? (
-          <p className={styles.copy}>Carregando conexoes cadastradas.</p>
+          <p className={styles.copy}>Carregando conexões cadastradas.</p>
         ) : connections.length === 0 ? (
-          <p className={styles.copy}>Nenhuma conexao de e-mail cadastrada.</p>
+          <p className={styles.copy}>Nenhuma conexão de e-mail cadastrada.</p>
         ) : (
           <div className={styles.connectionList}>
             {connections.map((connection) => (

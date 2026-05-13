@@ -238,7 +238,7 @@ async function handleNewsSearch(request, response) {
   url.searchParams.set('q', query)
   url.searchParams.set('language', 'pt')
   url.searchParams.set('sortBy', 'publishedAt')
-  url.searchParams.set('pageSize', String(PAGE_SIZE))
+  url.searchParams.set('pageSize', String(PAGE_SIZE * 2))
   url.searchParams.set('page', String(page))
 
   try {
@@ -265,8 +265,10 @@ async function handleNewsSearch(request, response) {
         url: article.url ?? '',
         source: article.source?.name ?? 'Fonte nao informada',
         publishedAt: article.publishedAt ?? '',
+        author: article.author ?? 'Autor desconhecido',
       })) ?? []
-    const filteredArticles = articles.filter((article) => article.url.length > 0)
+    const validArticles = articles.filter((article) => article.url.length > 0)
+    const filteredArticles = validArticles.slice(0, PAGE_SIZE)
     const totalResults = typeof data.totalResults === 'number' ? data.totalResults : 0
     const totalPages = Math.max(1, Math.ceil(totalResults / PAGE_SIZE))
 
@@ -309,6 +311,161 @@ async function handleNewsSearchHistory(request, response) {
   } catch (error) {
     console.error('[news-service] Failed to load search history', error)
     json(response, 500, { message: 'Nao foi possivel carregar o historico de buscas.' })
+  }
+}
+
+function normalizeUrl(value) {
+  return String(value ?? '')
+    .trim()
+    .replace(/#.*$/, '')
+    .replace(/\/+$/, '')
+}
+
+function buildSummaryPrompt(article) {
+  const content = String(article?.content ?? article?.description ?? '').trim()
+
+  return [
+    'Voce e um editor jornalistico do Portal Escarlate.',
+    'Abaixo esta o conteudo de uma noticia recuperada da NewsAPI.',
+    'O conteudo pode estar incompleto ou truncado. Use o titulo e o link da noticia como contexto adicional para coletar informacoes complementares para o resumo.',
+    'Escreva um resumo direto em portugues do Brasil, objetivo e coeso, destacando os pontos principais e o contexto mais importante.',
+    'Nao invente fatos que nao estejam no conteudo ou no contexto fornecido. Se o conteudo for incompleto ou truncado, deixe isso claro.',
+    'Retorne apenas texto limpo.',
+    'Nao crie titulo.',
+    'Nao use Markdown, listas, bullets, numeracao, negrito, italico, hashtags, tabelas ou separadores.',
+    'Use no maximo 3 paragrafos curtos, com ate 300 palavras no total.',
+    '',
+    `Titulo: ${article?.title || 'Sem titulo'}`,
+    `URL: ${article?.url || 'URL nao informada'}`,
+    `Autor: ${article?.author || 'Autor desconhecido'}`,
+    `Imagem: ${article?.urlToImage || 'Sem imagem'}`,
+    `Fonte: ${article?.source?.name || article?.source || 'Fonte nao informada'}`,
+    'Conteudo da noticia:',
+    content || 'Sem conteudo disponivel',
+  ].join('\n')
+}
+
+async function handleNewsSummarize(request, response) {
+  const sessionUser = getSessionUser(request)
+
+  if (!sessionUser) {
+    json(response, 401, { message: 'Sessao invalida. Faca login novamente.' })
+    return
+  }
+
+  let payload
+
+  try {
+    payload = await readJson(request)
+  } catch {
+    json(response, 400, { message: 'Nao foi possivel ler os dados da noticia.' })
+    return
+  }
+
+  const title = typeof payload?.title === 'string' ? payload.title.trim() : ''
+  const author = typeof payload?.author === 'string' ? payload.author.trim() : ''
+  const urlToImage = typeof payload?.urlToImage === 'string' ? payload.urlToImage.trim() : ''
+  const url = typeof payload?.url === 'string' ? payload.url.trim() : ''
+  const description = typeof payload?.description === 'string' ? payload.description.trim() : ''
+  const source = typeof payload?.source === 'string' ? payload.source.trim() : ''
+
+  if (!title || !url) {
+    json(response, 400, { message: 'Titulo e URL da noticia sao obrigatorios para resumo.' })
+    return
+  }
+
+  const newsApiKey = process.env.NEWS_API_KEY
+
+  if (!newsApiKey) {
+    json(response, 500, { message: 'NEWS_API_KEY nao configurada no servidor.' })
+    return
+  }
+
+  try {
+    const lookupUrl = new URL(NEWS_API_URL)
+    lookupUrl.searchParams.set('q', title)
+    lookupUrl.searchParams.set('language', 'pt')
+    lookupUrl.searchParams.set('sortBy', 'publishedAt')
+    lookupUrl.searchParams.set('pageSize', String(PAGE_SIZE * 2))
+
+    const lookupResponse = await fetch(lookupUrl.toString(), {
+      method: 'GET',
+      headers: {
+        'X-Api-Key': newsApiKey,
+      },
+      cache: 'no-store',
+    })
+
+    if (!lookupResponse.ok) {
+      throw new Error(
+        `Falha ao buscar noticia para resumo: ${lookupResponse.statusText || 'Erro externo.'}`,
+      )
+    }
+
+    const lookupData = await lookupResponse.json()
+    const normalizedTargetUrl = normalizeUrl(url)
+    const normalizedTargetTitle = title.trim().toLowerCase()
+    const foundArticle = (lookupData.articles ?? []).find((article) => {
+      const articleUrl = normalizeUrl(article.url)
+      const articleTitle = String(article.title ?? '').trim().toLowerCase()
+
+      return articleUrl === normalizedTargetUrl || articleTitle === normalizedTargetTitle
+    })
+
+    const articleForPrompt = foundArticle ?? {
+      title,
+      url,
+      author: author || 'Autor desconhecido',
+      urlToImage: urlToImage || '',
+      description,
+      content: '',
+      source,
+    }
+
+    const prompt = buildSummaryPrompt(articleForPrompt)
+    const summaryResponse = await fetch(new URL('/internal/ai/chat', getAiServiceUrl()), {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        messages: [
+          {
+            role: 'system',
+            content:
+              'Voce resume noticias com precisao, sem inventar fatos, em texto limpo, sem Markdown e sem titulo.',
+          },
+          {
+            role: 'user',
+            content: prompt,
+          },
+        ],
+        temperature: 0.3,
+      }),
+    })
+
+    const aiPayload = await summaryResponse.json().catch(() => null)
+
+    if (!summaryResponse.ok) {
+      throw new Error(aiPayload?.message ?? 'Nao foi possivel gerar resumo.')
+    }
+
+    const summary = typeof aiPayload?.content === 'string' ? aiPayload.content.trim() : ''
+
+    json(response, 200, {
+      title: articleForPrompt.title ?? title,
+      author: articleForPrompt.author ?? author,
+      urlToImage: articleForPrompt.urlToImage ?? urlToImage,
+      url: articleForPrompt.url ?? url,
+      summary,
+      provider: aiPayload?.provider,
+      model: aiPayload?.model,
+    })
+  } catch (error) {
+    console.error('[news-service] Failed to summarize news', error)
+    json(response, 500, {
+      message: error instanceof Error ? error.message : 'Nao foi possivel gerar o resumo agora.',
+    })
   }
 }
 
@@ -361,6 +518,11 @@ async function route(request, response) {
 
   if (request.method === 'POST' && url.pathname === '/api/news/search') {
     await handleNewsSearch(request, response)
+    return
+  }
+
+  if (request.method === 'POST' && url.pathname === '/api/news/summarize') {
+    await handleNewsSummarize(request, response)
     return
   }
 

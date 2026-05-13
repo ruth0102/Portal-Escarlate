@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { AuthForm, type AuthMessage } from './AuthForm'
+import { PasswordField } from './PasswordField'
 import { registerSchema } from '../../lib/auth/validation'
 import styles from './AuthPortal.module.css'
 
@@ -10,7 +11,7 @@ type RegisterFormProps = {
 
 const defaultMessage: AuthMessage = {
   tone: 'neutral',
-  text: 'Cadastro: informe seus dados para receber um link de confirmacao por e-mail antes da criacao da conta.',
+  text: 'Crie sua conta e confirme o e-mail para liberar o acesso.',
 }
 
 export function RegisterForm({ active }: RegisterFormProps) {
@@ -24,15 +25,15 @@ export function RegisterForm({ active }: RegisterFormProps) {
       formId="panel-register"
       actionLabel="Criar acesso"
       message={message}
-      note="O cadastro so sera concluido depois que o link enviado ao e-mail for aberto dentro do prazo."
+      note="O cadastro só será concluído depois que o link enviado ao e-mail for aberto dentro do prazo."
       meta={
         <>
           <label className={styles.checkline}>
-            <input type="checkbox" name="terms" required defaultChecked />
+            <input type="checkbox" name="terms" required />
             <span>Aceito os termos de acesso e coleta de dados</span>
           </label>
           <Link className={styles.textLink} to="/termos-de-uso">
-            Ler condicoes
+            Ler condições
           </Link>
         </>
       }
@@ -77,8 +78,8 @@ export function RegisterForm({ active }: RegisterFormProps) {
               text:
                 payload.message ??
                 (response.status === 404
-                  ? 'Backend de cadastro ainda nao foi migrado.'
-                  : 'Nao foi possivel concluir o cadastro.'),
+                  ? 'Backend de cadastro ainda não foi migrado.'
+                  : 'Não foi possível concluir o cadastro.'),
             })
             return
           }
@@ -87,12 +88,12 @@ export function RegisterForm({ active }: RegisterFormProps) {
             tone: 'success',
             text:
               payload.message ??
-              'Se este e-mail puder receber acesso, enviaremos um link de confirmacao em instantes.',
+              'Se este e-mail puder receber acesso, enviaremos um link de confirmação em instantes.',
           })
         } catch {
           setMessage({
             tone: 'error',
-            text: 'Backend de cadastro ainda nao esta disponivel.',
+            text: 'Backend de cadastro ainda não está disponível.',
           })
         } finally {
           setBusy(false)
@@ -109,37 +110,22 @@ export function RegisterForm({ active }: RegisterFormProps) {
             placeholder="novo@dominio.com"
             required
           />
-          <span className={styles.fieldIcon}>✦</span>
         </span>
       </label>
 
-      <label className={styles.field}>
-        <span className={styles.fieldLabel}>Senha</span>
-        <span className={styles.inputWrap}>
-          <input
-            className={styles.fieldInput}
-            type="password"
-            name="password"
-            placeholder="Crie uma senha"
-            required
-          />
-          <span className={styles.fieldIcon}>✧</span>
-        </span>
-      </label>
+      <PasswordField
+        label="Senha"
+        name="password"
+        placeholder="Crie uma senha"
+        autoComplete="new-password"
+      />
 
-      <label className={styles.field}>
-        <span className={styles.fieldLabel}>Confirmar senha</span>
-        <span className={styles.inputWrap}>
-          <input
-            className={styles.fieldInput}
-            type="password"
-            name="confirmPassword"
-            placeholder="Repita a senha"
-            required
-          />
-          <span className={styles.fieldIcon}>✦</span>
-        </span>
-      </label>
+      <PasswordField
+        label="Confirmar senha"
+        name="confirmPassword"
+        placeholder="Repita a senha"
+        autoComplete="new-password"
+      />
     </AuthForm>
   )
 }

@@ -3,11 +3,13 @@ import type { FormEvent } from 'react'
 import styles from './dashboard.module.css'
 
 type NewsArticle = {
+  shortId: string
   title: string
   description: string
   url: string
   source: string
   publishedAt: string
+  author?: string
 }
 
 type SearchResponse = {
@@ -31,31 +33,43 @@ type AiSummaryResponse = {
 
 const previewArticles: NewsArticle[] = [
   {
-    title: 'A curadoria de noticias sera conectada ao backend',
+    shortId: 'preview-escarlate',
+    title: 'Portal Escarlate lança nova plataforma de notícias',
     description:
-      'A interface ja replica o painel do projeto Next. A proxima etapa liga a NewsAPI no backend separado.',
+      'Portal Escarlate é a nova plataforma de notícias para ficar ligados em todos os assuntos — política, economia, ciência, cultura e mais.',
     url: '#',
     source: 'Portal Escarlate',
     publishedAt: new Date().toISOString(),
+    author: 'Equipe Portal Escarlate',
   },
 ]
 
 const SEARCH_HISTORY_KEY = 'portal-escarlate:news-search-history'
 const MAX_HISTORY_ITEMS = 10
+const PAGE_STATE_KEY = 'portal-escarlate:news-search-page-state'
 
 export function clearNewsSearchHistoryStorage() {
   window.localStorage.removeItem(SEARCH_HISTORY_KEY)
 }
 
+export function clearNewsSearchPageStateStorage() {
+  window.localStorage.removeItem(PAGE_STATE_KEY)
+}
+
+export function clearNewsSearchStorage() {
+  clearNewsSearchHistoryStorage()
+  clearNewsSearchPageStateStorage()
+}
+
 function formatPublishedAt(value: string) {
   if (!value) {
-    return 'Horario nao informado'
+    return 'Horário não informado'
   }
 
   const date = new Date(value)
 
   if (Number.isNaN(date.getTime())) {
-    return 'Horario nao informado'
+    return 'Horário não informado'
   }
 
   return date.toLocaleString('pt-BR')
@@ -73,6 +87,46 @@ function loadSearchHistory() {
     return parsed.filter((item): item is string => typeof item === 'string')
   } catch {
     return []
+  }
+}
+
+function loadPageState() {
+  try {
+    const raw = window.localStorage.getItem(PAGE_STATE_KEY)
+    if (!raw) return null
+    const parsed = JSON.parse(raw)
+    if (!parsed || typeof parsed !== 'object') return null
+    return parsed as null | {
+      query?: string
+      activeQuery?: string
+      articles?: NewsArticle[]
+      summary?: string
+      page?: number
+      totalPages?: number
+      totalResults?: number
+      pageSize?: number
+      hasSearched?: boolean
+    }
+  } catch {
+    return null
+  }
+}
+
+function savePageState(state: {
+  query?: string
+  activeQuery?: string
+  articles?: NewsArticle[]
+  summary?: string
+  page?: number
+  totalPages?: number
+  totalResults?: number
+  pageSize?: number
+  hasSearched?: boolean
+}) {
+  try {
+    window.localStorage.setItem(PAGE_STATE_KEY, JSON.stringify(state))
+  } catch {
+    // ignore quota errors
   }
 }
 
@@ -95,6 +149,29 @@ function mergeSearchHistory(primary: string[], secondary: string[]) {
   }
 
   return next.slice(0, MAX_HISTORY_ITEMS)
+}
+
+function createShortId(existingIds: string[] = []) {
+  let candidate = ''
+
+  do {
+    candidate = Math.random().toString(36).slice(2, 8)
+  } while (!candidate || existingIds.includes(candidate))
+
+  return candidate
+}
+
+function attachShortIds(articles: NewsArticle[]) {
+  const nextIds = new Set<string>()
+
+  return articles.map((article) => {
+    const shortId = article.shortId || createShortId(Array.from(nextIds))
+    nextIds.add(shortId)
+    return {
+      ...article,
+      shortId,
+    }
+  })
 }
 
 export function NewsSearch() {
@@ -160,6 +237,34 @@ export function NewsSearch() {
     }
 
     loadRemoteHistory()
+    // attempt to restore saved page state
+    const saved = loadPageState()
+    if (saved) {
+      if (Array.isArray(saved.articles) && saved.articles.length > 0) {
+        const restoredArticles = attachShortIds(saved.articles)
+        setArticles(restoredArticles)
+        savePageState({
+          query: saved.query,
+          activeQuery: saved.activeQuery,
+          articles: restoredArticles,
+          summary: saved.summary,
+          page: saved.page,
+          totalPages: saved.totalPages,
+          totalResults: saved.totalResults,
+          pageSize: saved.pageSize,
+          hasSearched: saved.hasSearched,
+        })
+      }
+
+      if (typeof saved.query === 'string') setQuery(saved.query)
+      if (typeof saved.activeQuery === 'string') setActiveQuery(saved.activeQuery)
+      if (typeof saved.summary === 'string') setAiSummary(saved.summary)
+      if (typeof saved.page === 'number') setPage(saved.page)
+      if (typeof saved.totalPages === 'number') setTotalPages(saved.totalPages)
+      if (typeof saved.totalResults === 'number') setTotalResults(saved.totalResults)
+      if (typeof saved.pageSize === 'number') setPageSize(saved.pageSize)
+      if (saved.hasSearched) setHasSearched(true)
+    }
 
     return () => controller.abort()
   }, [])
@@ -180,6 +285,16 @@ export function NewsSearch() {
       saveSearchHistory(next)
       return next
     })
+  }
+
+  function buildSummaryUrl(_article: NewsArticle): string | null {
+    if (!_article.shortId) {
+      return null
+    }
+
+    const params = new URLSearchParams({ id: _article.shortId })
+
+    return `/news/summary?${params.toString()}`
   }
 
   async function summarizePage(input: { query: string; articles: NewsArticle[] }) {
@@ -219,13 +334,31 @@ export function NewsSearch() {
       }
 
       if (!response.ok) {
-        setAiSummaryError(data.message ?? data.error ?? 'Nao foi possivel gerar o resumo da pagina.')
+        setAiSummaryError(data.message ?? data.error ?? 'Não foi possível gerar o resumo da página.')
         return
       }
 
-      setAiSummary(data.summary ?? '')
+      const nextSummary = data.summary ?? ''
+      setAiSummary(nextSummary)
+
+      try {
+        const currentSavedState = loadPageState()
+        savePageState({
+          query: input.query,
+          activeQuery: input.query,
+          articles: summarizableArticles,
+          summary: nextSummary,
+          page: currentSavedState?.page ?? page,
+          totalPages: currentSavedState?.totalPages ?? totalPages,
+          totalResults: currentSavedState?.totalResults ?? totalResults,
+          pageSize: currentSavedState?.pageSize ?? pageSize,
+          hasSearched: true,
+        })
+      } catch {
+        // ignore persistence errors
+      }
     } catch {
-      setAiSummaryError('Servico de IA indisponivel para resumir esta pagina.')
+      setAiSummaryError('Serviço de IA indisponível para resumir esta página.')
     } finally {
       setAiSummaryLoading(false)
     }
@@ -258,13 +391,13 @@ export function NewsSearch() {
         setError(
           data.message ??
             (response.status === 404
-              ? 'Backend de noticias ainda nao foi migrado.'
-              : 'Falha ao buscar noticias.'),
+              ? 'Backend de notícias ainda não foi migrado.'
+              : 'Falha ao buscar notícias.'),
         )
         return
       }
 
-      const nextArticles = data.articles ?? []
+      const nextArticles = attachShortIds(data.articles ?? [])
 
       setArticles(nextArticles)
       setActiveQuery(input.query)
@@ -273,10 +406,25 @@ export function NewsSearch() {
       setTotalPages(data.totalPages ?? 1)
       setTotalResults(data.totalResults ?? 0)
       setPageSize(data.pageSize ?? 20)
+      // persist current page state so user can return exactly to this view
+      try {
+        savePageState({
+          query: query,
+          activeQuery: input.query,
+          articles: nextArticles,
+          page: data.page ?? input.page,
+          totalPages: data.totalPages ?? 1,
+          totalResults: data.totalResults ?? 0,
+          pageSize: data.pageSize ?? 20,
+          hasSearched: true,
+        })
+      } catch {
+        // ignore storage errors
+      }
       void summarizePage({ query: input.query, articles: nextArticles })
     } catch {
       setArticles(previewArticles)
-      setError('Backend de noticias ainda nao esta disponivel.')
+      setError('Backend de notícias ainda não está disponível.')
     } finally {
       setLoading(false)
     }
@@ -317,7 +465,7 @@ export function NewsSearch() {
     <div id="news-search" className={styles.newsBox} ref={newsSearchRef}>
       <form className={styles.newsForm} onSubmit={handleSubmit}>
         <label className={styles.newsLabel} htmlFor="news-query">
-          Buscar noticias recentes
+          Buscar notícias recentes
         </label>
 
         <div className={styles.newsControls}>
@@ -335,7 +483,7 @@ export function NewsSearch() {
               onBlur={() => {
                 window.setTimeout(() => setSuggestionsOpen(false), 120)
               }}
-              placeholder="Ex.: politica, economia, transparencia"
+              placeholder="Ex.: política, economia, transparência"
               autoComplete="off"
             />
 
@@ -365,30 +513,30 @@ export function NewsSearch() {
       {error ? <p className={styles.newsError}>{error}</p> : null}
 
       {hasSearched && !loading && !error && articles.length === 0 ? (
-        <p className={styles.newsHint}>Nenhuma noticia encontrada para este termo.</p>
+        <p className={styles.newsHint}>Nenhuma notícia encontrada para este termo.</p>
       ) : null}
 
       {hasSearched && !error ? (
         <div className={styles.newsPaginationSummary}>
           <span>
-            Pagina {page} de {totalPages} • {totalResults} resultados encontrados • {pageSize} por
-            pagina
+            Página {page} de {totalPages} • {totalResults} resultados encontrados • {pageSize} por
+            página
           </span>
         </div>
       ) : null}
 
       {hasSearched && !error ? (
         <section className={styles.aiSummaryBox} aria-live="polite">
-          <span className={styles.aiSummaryLabel}>Sintese da pagina</span>
+          <span className={styles.aiSummaryLabel}>Síntese da página</span>
           {aiSummaryLoading ? (
-            <p className={styles.aiSummaryText}>Gerando resumo central das noticias...</p>
+            <p className={styles.aiSummaryText}>Gerando resumo central das notícias...</p>
           ) : aiSummary ? (
             <p className={styles.aiSummaryText}>{aiSummary}</p>
           ) : aiSummaryError ? (
             <p className={styles.aiSummaryError}>{aiSummaryError}</p>
           ) : (
             <p className={styles.aiSummaryText}>
-              A sintese sera exibida aqui quando houver noticias para resumir.
+              A síntese será exibida aqui quando houver notícias para resumir.
             </p>
           )}
         </section>
@@ -397,8 +545,14 @@ export function NewsSearch() {
       {articles.length > 0 ? (
         <>
           <ul className={styles.newsList}>
-            {articles.map((article) => (
+            {articles.map((article, index) => (
               <li className={styles.newsItem} key={article.url + article.title}>
+                <div className={styles.newsItemHeader}>
+                  <span className={styles.newsItemBadge}>#{(page - 1) * pageSize + index + 1}</span>
+                  <span className={styles.newsItemSource}>{article.source}</span>
+                  <span className={styles.newsItemDate}>{formatPublishedAt(article.publishedAt)}</span>
+                </div>
+
                 <a
                   className={styles.newsLink}
                   href={article.url}
@@ -407,12 +561,32 @@ export function NewsSearch() {
                 >
                   {article.title}
                 </a>
-                <p className={styles.newsMeta}>
-                  {article.source} • {formatPublishedAt(article.publishedAt)}
-                </p>
+
                 {article.description ? (
                   <p className={styles.newsDescription}>{article.description}</p>
                 ) : null}
+
+                <div className={styles.newsItemFooter}>
+                  <span className={styles.newsMeta}>Notícia em destaque</span>
+                  <div className={styles.newsItemActions}>
+                    {buildSummaryUrl(article) ? (
+                      <a
+                        className={styles.newsAiButton}
+                        href={buildSummaryUrl(article) || '#'}
+                      >
+                        Resumo com IA
+                      </a>
+                    ) : null}
+                    <a
+                      className={styles.newsOpenLink}
+                      href={article.url}
+                      target="_blank"
+                      rel="noreferrer noopener"
+                    >
+                      Abrir notícia
+                    </a>
+                  </div>
+                </div>
               </li>
             ))}
           </ul>
@@ -436,7 +610,7 @@ export function NewsSearch() {
                 disabled={page >= totalPages || loading}
                 onClick={() => goToPage(page + 1)}
               >
-                Proxima
+                Próxima
               </button>
             </div>
           ) : null}

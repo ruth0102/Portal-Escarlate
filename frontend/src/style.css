@@ -79,20 +79,13 @@ body::before {
       rgba(231, 197, 102, 0.018) 121px,
       transparent 122px
     );
-  mix-blend-mode: screen;
-  opacity: 0.35;
+  opacity: 0.18;
 }
 
 body::after {
   background:
-    radial-gradient(circle at center, transparent 50%, rgba(0, 0, 0, 0.55) 100%),
-    linear-gradient(
-      180deg,
-      rgba(255, 255, 255, 0.03),
-      transparent 18%,
-      transparent 82%,
-      rgba(255, 255, 255, 0.03)
-    );
+    radial-gradient(circle at center, transparent 52%, rgba(0, 0, 0, 0.42) 100%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.02), transparent 22%, transparent 78%, rgba(255, 255, 255, 0.02));
 }
 
 a {

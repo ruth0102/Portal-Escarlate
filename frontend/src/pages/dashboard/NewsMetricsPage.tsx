@@ -85,7 +85,7 @@ export function NewsMetricsPage() {
     const payload = (await response.json().catch(() => ({}))) as NewsMetricsResponse
 
     if (!response.ok) {
-      throw new Error(payload.message ?? 'Nao foi possivel carregar as metricas.')
+      throw new Error(payload.message ?? 'Não foi possível carregar as métricas.')
     }
 
     setMetrics(payload)
@@ -116,7 +116,7 @@ export function NewsMetricsPage() {
         await loadMetrics(controller.signal)
       } catch (loadError) {
         if (!controller.signal.aborted) {
-          setError(loadError instanceof Error ? loadError.message : 'Falha ao carregar metricas.')
+          setError(loadError instanceof Error ? loadError.message : 'Falha ao carregar métricas.')
         }
       } finally {
         if (!controller.signal.aborted) {
@@ -138,7 +138,7 @@ export function NewsMetricsPage() {
       await loadMetrics()
     } catch (refreshError) {
       setError(
-        refreshError instanceof Error ? refreshError.message : 'Nao foi possivel atualizar metricas.',
+        refreshError instanceof Error ? refreshError.message : 'Não foi possível atualizar métricas.',
       )
     } finally {
       setLoading(false)
@@ -150,8 +150,8 @@ export function NewsMetricsPage() {
       <section className={styles.panel}>
         <div className={styles.header}>
           <div>
-            <span className={styles.kicker}>Administracao</span>
-            <h1 className={styles.title}>Metricas de pesquisa</h1>
+            <span className={styles.kicker}>Administração</span>
+            <h1 className={styles.title}>Métricas de pesquisa</h1>
           </div>
 
           <div className={styles.headerActions}>
@@ -167,9 +167,9 @@ export function NewsMetricsPage() {
         {error && <p className={styles.adminError}>{error}</p>}
 
         {loading ? (
-          <p className={styles.copy}>Gerando metricas com apoio da IA.</p>
+          <p className={styles.copy}>Gerando métricas com apoio da IA.</p>
         ) : !metrics || metrics.themes.length === 0 ? (
-          <p className={styles.copy}>Ainda nao ha historico suficiente para gerar metricas.</p>
+          <p className={styles.copy}>Ainda não há histórico suficiente para gerar métricas.</p>
         ) : (
           <div className={styles.metricsGrid}>
             <article className={styles.metricPanel}>
@@ -182,15 +182,15 @@ export function NewsMetricsPage() {
                     label={theme.theme}
                     value={theme.totalSearches}
                     max={maxThemeSearches}
-                    secondary={`${theme.uniqueUsers} usuario(s)`}
+                    secondary={`${theme.uniqueUsers} usuário(s)`}
                   />
                 ))}
               </div>
             </article>
 
             <article className={styles.metricPanel}>
-              <span className={styles.label}>Temas por usuarios unicos</span>
-              <strong className={styles.value}>1 por usuario em cada tema</strong>
+              <span className={styles.label}>Temas por usuários únicos</span>
+              <strong className={styles.value}>1 por usuário em cada tema</strong>
               <div className={styles.metricRows}>
                 {metrics.themes.map((theme) => (
                   <BarRow
@@ -205,8 +205,8 @@ export function NewsMetricsPage() {
             </article>
 
             <article className={styles.metricPanel}>
-              <span className={styles.label}>Usuarios</span>
-              <strong className={styles.value}>{metrics.users.length} usuario(s)</strong>
+              <span className={styles.label}>Usuários</span>
+              <strong className={styles.value}>{metrics.users.length} usuário(s)</strong>
               <div className={styles.metricRows}>
                 {metrics.users.map((metricUser) => (
                   <BarRow
@@ -222,7 +222,7 @@ export function NewsMetricsPage() {
             </article>
 
             <article className={styles.metricPanel}>
-              <span className={styles.label}>Temas do usuario</span>
+              <span className={styles.label}>Temas do usuário</span>
               <strong className={styles.value}>{selectedUser?.email}</strong>
               <div className={styles.metricRows}>
                 {selectedUser?.themes.map((theme) => (

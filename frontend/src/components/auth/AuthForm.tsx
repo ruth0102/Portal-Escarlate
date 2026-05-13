@@ -52,7 +52,7 @@ export function AuthForm({
         {busy ? 'Processando...' : actionLabel}
       </button>
 
-      <div className={styles.microline}>noticias de alto impacto • consulta reservada</div>
+      <div className={styles.microline}>notícias de alto impacto • consulta reservada</div>
 
       <div className={statusClassName}>
         <span>{message.text}</span>

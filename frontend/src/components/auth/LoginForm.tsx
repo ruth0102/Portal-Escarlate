@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { AuthForm, type AuthMessage } from './AuthForm'
+import { PasswordField } from './PasswordField'
 import { loginSchema } from '../../lib/auth/validation'
 import styles from './AuthPortal.module.css'
 
@@ -11,7 +12,7 @@ type LoginFormProps = {
 
 const defaultMessage: AuthMessage = {
   tone: 'neutral',
-  text: 'Login: pronto para conectar sua autenticacao e liberar a area de monitoramento e pesquisa publica.',
+  text: 'Informe suas credenciais para acessar sua área de pesquisa.',
 }
 
 export function LoginForm({ active, initialNotice }: LoginFormProps) {
@@ -35,15 +36,11 @@ export function LoginForm({ active, initialNotice }: LoginFormProps) {
       message={message}
       meta={
         <>
-          <label className={styles.checkline}>
-            <input type="checkbox" name="remember" />
-            <span>Manter acesso ativo</span>
-          </label>
           <Link className={styles.textLink} to="/termos-de-uso">
             Termos de uso
           </Link>
           <span className={styles.privacyNotice}>
-            Ao entrar, voce concorda com as politicas de coleta e uso de dados.
+            Ao entrar, você concorda com as políticas de coleta e uso de dados.
           </span>
         </>
       }
@@ -81,8 +78,8 @@ export function LoginForm({ active, initialNotice }: LoginFormProps) {
               tone: 'error',
               text:
                 response.status === 404
-                  ? 'Backend de autenticacao ainda nao foi migrado.'
-                  : 'Credenciais invalidas ou conta indisponivel no momento.',
+                  ? 'Backend de autenticação ainda não foi migrado.'
+                  : 'Credenciais inválidas ou conta indisponível no momento.',
             })
             return
           }
@@ -95,7 +92,7 @@ export function LoginForm({ active, initialNotice }: LoginFormProps) {
         } catch {
           setMessage({
             tone: 'error',
-            text: 'Backend de autenticacao ainda nao esta disponivel.',
+            text: 'Backend de autenticação ainda não está disponível.',
           })
         } finally {
           setBusy(false)
@@ -109,26 +106,18 @@ export function LoginForm({ active, initialNotice }: LoginFormProps) {
             className={styles.fieldInput}
             type="email"
             name="email"
-            placeholder="voce@dominio.com"
+            placeholder="usuario@dominio.com"
             required
           />
-          <span className={styles.fieldIcon}>✦</span>
         </span>
       </label>
 
-      <label className={styles.field}>
-        <span className={styles.fieldLabel}>Senha</span>
-        <span className={styles.inputWrap}>
-          <input
-            className={styles.fieldInput}
-            type="password"
-            name="password"
-            placeholder="Digite sua senha"
-            required
-          />
-          <span className={styles.fieldIcon}>✧</span>
-        </span>
-      </label>
+      <PasswordField
+        label="Senha"
+        name="password"
+        placeholder="Digite sua senha"
+        autoComplete="current-password"
+      />
     </AuthForm>
   )
 }

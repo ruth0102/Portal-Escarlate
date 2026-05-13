@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { NewsSearch, clearNewsSearchHistoryStorage } from './NewsSearch'
+import { NewsSearch, clearNewsSearchStorage } from './NewsSearch'
 import styles from './dashboard.module.css'
 
 type SessionUser = {
@@ -48,7 +48,7 @@ export function DashboardPage() {
 
   async function handleLogout() {
     await fetch('/api/auth/logout', { method: 'POST' }).catch(() => undefined)
-    clearNewsSearchHistoryStorage()
+    clearNewsSearchStorage()
     navigate('/', { replace: true })
   }
 
@@ -57,7 +57,7 @@ export function DashboardPage() {
       <main className={styles.page}>
         <section className={styles.panel}>
           <span className={styles.kicker}>Ala reservada</span>
-          <h1 className={styles.title}>Carregando sessao</h1>
+          <h1 className={styles.title}>Carregando sessão</h1>
         </section>
       </main>
     )
@@ -82,7 +82,7 @@ export function DashboardPage() {
             <span className={styles.label}>Conta ativa</span>
             <strong className={styles.value}>{user?.email}</strong>
             <p className={styles.copy}>
-              Acesso liberado para acompanhar buscas, sinteses e historico de curadoria do
+              Acesso liberado para acompanhar buscas, sínteses e histórico de curadoria do
               Portal Escarlate.
             </p>
           </article>
@@ -90,19 +90,19 @@ export function DashboardPage() {
           <article className={styles.card}>
             <span className={styles.label}>Perfil</span>
             <strong className={styles.value}>
-              {user?.role === 'admin' ? 'Administrador' : 'Usuario'}
+              {user?.role === 'admin' ? 'Administrador' : 'Usuário'}
             </strong>
             <p className={styles.copy}>
-              Permissoes aplicadas para organizar o acesso aos recursos editoriais e de
+              Permissões aplicadas para organizar o acesso aos recursos editoriais e de
               pesquisa.
             </p>
             {user?.role === 'admin' && (
               <div className={styles.adminButtonGroup}>
                 <Link className={styles.adminButton} to="/admin/email-connections">
-                  Conexoes
+                  Conexões
                 </Link>
                 <Link className={styles.adminButton} to="/admin/news-metrics">
-                  Metricas
+                  Métricas
                 </Link>
               </div>
             )}
@@ -110,10 +110,10 @@ export function DashboardPage() {
 
           <article className={styles.cardWide}>
             <span className={styles.label}>Central de pesquisa</span>
-            <strong className={styles.value}>Noticias, contexto e sintese editorial</strong>
+            <strong className={styles.value}>Notícias, contexto e síntese editorial</strong>
             <p className={styles.copy}>
               Pesquise temas relevantes, navegue por resultados paginados e acompanhe uma
-              sintese objetiva da pagina atual.
+              síntese objetiva da página atual.
             </p>
 
             <NewsSearch />
