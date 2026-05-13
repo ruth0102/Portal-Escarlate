@@ -4,6 +4,7 @@ import { AuthPortal } from './components/auth/AuthPortal'
 import { DashboardPage } from './pages/dashboard/DashboardPage'
 import { EmailConnectionsPage } from './pages/dashboard/EmailConnectionsPage'
 import { NewsMetricsPage } from './pages/dashboard/NewsMetricsPage'
+import { FictionalNewsPage } from './pages/news/FictionalNewsPage'
 import { NewsSummaryPage } from './pages/news-summary/NewsSummaryPage'
 import { TermsPage } from './pages/terms/TermsPage'
 import { VerifyEmailPage } from './pages/verify-email/VerifyEmailPage'
@@ -65,6 +66,7 @@ export function App() {
       <Route path="/termos-de-uso" element={<TermsPage />} />
       <Route path="/verify-email" element={<VerifyEmailPage />} />
       <Route path="/dashboard" element={<DashboardPage />} />
+      <Route path="/news/portal-escarlate" element={<FictionalNewsPage />} />
       <Route path="/news/summary" element={<NewsSummaryPage />} />
       <Route path="/admin/email-connections" element={<EmailConnectionsPage />} />
       <Route path="/admin/news-metrics" element={<NewsMetricsPage />} />

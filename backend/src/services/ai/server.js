@@ -6,6 +6,47 @@ import { getSessionUser } from '../../shared/http/session-user.js'
 const port = Number.parseInt(process.env.AI_SERVICE_PORT ?? '3004', 10)
 const hostname = process.env.HOST ?? '127.0.0.1'
 const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions'
+const FAILED_AI_TARGET_COOLDOWN_MS = 5 * 60 * 1000
+
+let aiConfigsCache = null
+let aiConfigsCachePromise = null
+const failedAiTargets = new Map()
+
+class AiProviderError extends Error {
+  constructor(message, details = {}) {
+    super(message)
+    this.name = 'AiProviderError'
+    this.status = details.status
+    this.code = details.code
+    this.provider = details.provider
+    this.model = details.model
+    this.rawMessage = details.rawMessage
+  }
+}
+
+function extractProviderError(data, status) {
+  const error = data?.error
+  const metadata = error?.metadata
+  const rawMessage =
+    typeof error?.message === 'string' && error.message.trim()
+      ? error.message.trim()
+      : `OpenRouter respondeu com status ${status}.`
+  const providerMessage =
+    typeof metadata?.raw === 'string' && metadata.raw.trim() ? metadata.raw.trim() : ''
+  const code =
+    typeof error?.code === 'string' || typeof error?.code === 'number' ? String(error.code) : ''
+  const provider =
+    typeof metadata?.provider_name === 'string' && metadata.provider_name.trim()
+      ? metadata.provider_name.trim()
+      : ''
+
+  return {
+    code,
+    provider,
+    rawMessage: providerMessage || rawMessage,
+    message: providerMessage || rawMessage,
+  }
+}
 
 function normalizeMessages(messages) {
   if (!Array.isArray(messages)) {
@@ -18,6 +59,44 @@ function normalizeMessages(messages) {
       content: typeof message?.content === 'string' ? message.content.trim() : '',
     }))
     .filter((message) => message.content.length > 0)
+}
+
+function getAiTargetId(config, model) {
+  return `${config.apiKeyId}:${model}`
+}
+
+function isAiTargetCoolingDown(targetId) {
+  const failedAt = failedAiTargets.get(targetId)
+
+  if (!failedAt) {
+    return false
+  }
+
+  if (Date.now() - failedAt > FAILED_AI_TARGET_COOLDOWN_MS) {
+    failedAiTargets.delete(targetId)
+    return false
+  }
+
+  return true
+}
+
+async function getCachedAiConfigs({ forceRefresh = false } = {}) {
+  if (aiConfigsCache && !forceRefresh) {
+    return aiConfigsCache
+  }
+
+  if (!aiConfigsCachePromise) {
+    aiConfigsCachePromise = listActiveAiConfigs()
+      .then((configs) => {
+        aiConfigsCache = configs
+        return configs
+      })
+      .finally(() => {
+        aiConfigsCachePromise = null
+      })
+  }
+
+  return aiConfigsCachePromise
 }
 
 async function requestOpenRouterCompletion(input) {
@@ -39,7 +118,15 @@ async function requestOpenRouterCompletion(input) {
   const data = await openRouterResponse.json().catch(() => ({}))
 
   if (!openRouterResponse.ok) {
-    throw new Error(data?.error?.message ?? `OpenRouter failed with status ${openRouterResponse.status}`)
+    const providerError = extractProviderError(data, openRouterResponse.status)
+
+    throw new AiProviderError(providerError.message, {
+      status: openRouterResponse.status,
+      code: providerError.code,
+      provider: providerError.provider,
+      model: input.model,
+      rawMessage: providerError.rawMessage,
+    })
   }
 
   const content = data?.choices?.[0]?.message?.content
@@ -52,37 +139,69 @@ async function requestOpenRouterCompletion(input) {
 }
 
 async function completeWithFallback(input) {
-  const configs = await listActiveAiConfigs()
+  let configs = await getCachedAiConfigs()
   let lastError
+  let refreshedAfterFailure = false
 
-  for (const config of configs) {
-    if (config.provider !== 'openrouter') {
-      continue
+  while (true) {
+    let refreshedDuringLoop = false
+
+    for (const config of configs) {
+      if (config.provider !== 'openrouter') {
+        continue
+      }
+
+      for (const model of config.models) {
+        const targetId = getAiTargetId(config, model)
+
+        if (isAiTargetCoolingDown(targetId)) {
+          continue
+        }
+
+        try {
+          const content = await requestOpenRouterCompletion({
+            apiKey: config.apiKey,
+            model,
+            messages: input.messages,
+            temperature: input.temperature,
+          })
+
+          failedAiTargets.delete(targetId)
+
+          return {
+            content,
+            provider: config.provider,
+            model,
+          }
+        } catch (error) {
+          lastError = error
+          failedAiTargets.set(targetId, Date.now())
+          console.error('[ai-service] AI config failed, trying next fallback when available', {
+            provider: config.provider,
+            label: config.label,
+            model,
+            status: error?.status,
+            code: error?.code,
+            providerName: error?.provider,
+            message: error instanceof Error ? error.message : 'Unknown error',
+          })
+
+          if (!refreshedAfterFailure) {
+            configs = await getCachedAiConfigs({ forceRefresh: true })
+            refreshedAfterFailure = true
+            refreshedDuringLoop = true
+            break
+          }
+        }
+      }
+
+      if (refreshedDuringLoop) {
+        break
+      }
     }
 
-    for (const model of config.models) {
-      try {
-        const content = await requestOpenRouterCompletion({
-          apiKey: config.apiKey,
-          model,
-          messages: input.messages,
-          temperature: input.temperature,
-        })
-
-        return {
-          content,
-          provider: config.provider,
-          model,
-        }
-      } catch (error) {
-        lastError = error
-        console.error('[ai-service] AI config failed', {
-          provider: config.provider,
-          label: config.label,
-          model,
-          message: error instanceof Error ? error.message : 'Unknown error',
-        })
-      }
+    if (!refreshedDuringLoop) {
+      break
     }
   }
 
@@ -127,9 +246,24 @@ async function handleChatCompletion(request, response, { requireSession }) {
     json(response, 200, result)
   } catch (error) {
     console.error('[ai-service] Failed to complete AI request', error)
+    const providerSuffix =
+      error instanceof AiProviderError
+        ? [
+            error.status ? `status ${error.status}` : '',
+            error.code ? `codigo ${error.code}` : '',
+            error.model ? `modelo ${error.model}` : '',
+          ]
+            .filter(Boolean)
+            .join(', ')
+        : ''
+
     json(response, 500, {
       message:
-        error instanceof Error ? error.message : 'Nao foi possivel completar a requisicao de IA.',
+        error instanceof Error
+          ? providerSuffix
+            ? `${error.message} (${providerSuffix}).`
+            : error.message
+          : 'Nao foi possivel completar a requisicao de IA.',
     })
   }
 }

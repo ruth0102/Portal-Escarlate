@@ -546,7 +546,22 @@
 
 .newsItemBadge,
 .newsItemSource,
-.newsItemDate,
+.newsItemDate {
+  display: inline-flex;
+  align-items: center;
+  min-height: 30px;
+  padding: 0 10px;
+  border: 1px solid rgba(231, 197, 102, 0.16);
+  border-radius: 999px;
+  background: rgba(8, 3, 4, 0.28);
+  color: rgba(248, 237, 208, 0.78);
+  font-size: 0.8rem;
+  letter-spacing: 0.02rem;
+  text-decoration: none;
+  cursor: default;
+  user-select: text;
+}
+
 .newsOpenLink,
 .newsAiButton {
   display: inline-flex;
@@ -560,12 +575,12 @@
   font-size: 0.8rem;
   letter-spacing: 0.02rem;
   text-decoration: none;
+  cursor: pointer;
   transition:
     transform var(--transition),
     border-color var(--transition),
     background var(--transition),
     color var(--transition);
-  cursor: pointer;
 }
 
 .newsAiButton {
@@ -578,10 +593,6 @@
   border-color: rgba(231, 197, 102, 0.4);
   background: rgba(120, 10, 16, 0.28);
   color: var(--gold-1);
-}
-
-.newsOpenLink {
-  cursor: pointer;
 }
 
 .newsOpenLink:hover {

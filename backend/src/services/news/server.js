@@ -1,4 +1,5 @@
 import http from 'node:http'
+import { listActiveNewsApiKeys, markNewsApiKeyFailure } from '../../lib/news/api-key-repo.js'
 import {
   createNewsSearchHistory,
   listNewsSearchMetricRows,
@@ -11,6 +12,14 @@ const port = Number.parseInt(process.env.NEWS_SERVICE_PORT ?? '3002', 10)
 const hostname = process.env.HOST ?? '127.0.0.1'
 const NEWS_API_URL = 'https://newsapi.org/v2/everything'
 const PAGE_SIZE = 20
+const ARTICLE_FETCH_TIMEOUT_MS = 7000
+const MAX_ARTICLE_HTML_LENGTH = 1_500_000
+const MAX_ARTICLE_TEXT_LENGTH = 12_000
+const FAILED_NEWS_API_KEY_COOLDOWN_MS = 5 * 60 * 1000
+
+let newsApiKeysCache = null
+let newsApiKeysCachePromise = null
+const failedNewsApiKeys = new Map()
 
 function sanitizeQuery(value) {
   if (typeof value !== 'string') {
@@ -39,6 +48,144 @@ function getAiServiceUrl() {
   const servicePort = process.env.AI_SERVICE_PORT ?? '3004'
 
   return `http://${serviceHost}:${servicePort}`
+}
+
+function extractNewsApiError(payload, response) {
+  if (typeof payload?.message === 'string' && payload.message.trim()) {
+    return payload.message.trim()
+  }
+
+  if (typeof payload?.code === 'string' && payload.code.trim()) {
+    return payload.code.trim()
+  }
+
+  return response.statusText || `Erro externo ${response.status}`
+}
+
+function isNewsApiKeyCoolingDown(apiKeyId) {
+  const failedAt = failedNewsApiKeys.get(apiKeyId)
+
+  if (!failedAt) {
+    return false
+  }
+
+  if (Date.now() - failedAt > FAILED_NEWS_API_KEY_COOLDOWN_MS) {
+    failedNewsApiKeys.delete(apiKeyId)
+    return false
+  }
+
+  return true
+}
+
+async function getCachedNewsApiKeys({ forceRefresh = false } = {}) {
+  if (newsApiKeysCache && !forceRefresh) {
+    return newsApiKeysCache
+  }
+
+  if (!newsApiKeysCachePromise) {
+    newsApiKeysCachePromise = listActiveNewsApiKeys()
+      .then((apiKeys) => {
+        newsApiKeysCache = apiKeys
+        return apiKeys
+      })
+      .finally(() => {
+        newsApiKeysCachePromise = null
+      })
+  }
+
+  return newsApiKeysCachePromise
+}
+
+async function fetchNewsApiJsonWithFallback(url) {
+  let apiKeys = await getCachedNewsApiKeys()
+  let lastError
+  let refreshedAfterFailure = false
+
+  while (true) {
+    if (apiKeys.length === 0) {
+      throw new Error('Nenhuma chave ativa da NewsAPI cadastrada no banco de dados.')
+    }
+
+    let refreshedDuringLoop = false
+
+    for (const apiKey of apiKeys) {
+      if (isNewsApiKeyCoolingDown(apiKey.id)) {
+        continue
+      }
+
+      try {
+        const responseFromApi = await fetch(url.toString(), {
+          method: 'GET',
+          headers: {
+            'X-Api-Key': apiKey.apiKey,
+          },
+          cache: 'no-store',
+        })
+        const data = await responseFromApi.json().catch(() => ({}))
+
+        if (!responseFromApi.ok) {
+          const message = extractNewsApiError(data, responseFromApi)
+          lastError = new Error(`NewsAPI falhou com a chave ${apiKey.label || apiKey.id}: ${message}`)
+          failedNewsApiKeys.set(apiKey.id, Date.now())
+
+          await markNewsApiKeyFailure({
+            id: apiKey.id,
+            error: message,
+          })
+
+          console.warn('[news-service] NewsAPI key failed, trying next fallback when available', {
+            id: apiKey.id,
+            label: apiKey.label,
+            status: responseFromApi.status,
+            message,
+          })
+
+          if (!refreshedAfterFailure) {
+            apiKeys = await getCachedNewsApiKeys({ forceRefresh: true })
+            refreshedAfterFailure = true
+            refreshedDuringLoop = true
+            break
+          }
+
+          continue
+        }
+
+        failedNewsApiKeys.delete(apiKey.id)
+        return data
+      } catch (error) {
+        lastError = error
+        failedNewsApiKeys.set(apiKey.id, Date.now())
+
+        await markNewsApiKeyFailure({
+          id: apiKey.id,
+          error: error instanceof Error ? error.message : 'Erro desconhecido ao consultar NewsAPI.',
+        }).catch(() => undefined)
+
+        console.warn('[news-service] NewsAPI key request failed, trying next fallback when available', {
+          id: apiKey.id,
+          label: apiKey.label,
+          message: error instanceof Error ? error.message : 'Unknown error',
+        })
+
+        if (!refreshedAfterFailure) {
+          apiKeys = await getCachedNewsApiKeys({ forceRefresh: true })
+          refreshedAfterFailure = true
+          refreshedDuringLoop = true
+          break
+        }
+      }
+    }
+
+    if (!refreshedDuringLoop) {
+      break
+    }
+  }
+
+  if (lastError instanceof Error) {
+    throw lastError
+  }
+
+  throw new Error('Nenhuma chave da NewsAPI conseguiu completar a requisicao.')
 }
 
 function requireAdmin(request, response) {
@@ -209,13 +356,6 @@ async function handleNewsSearch(request, response) {
     return
   }
 
-  const newsApiKey = process.env.NEWS_API_KEY
-
-  if (!newsApiKey) {
-    json(response, 500, { message: 'NEWS_API_KEY nao configurada no servidor.' })
-    return
-  }
-
   let payload
 
   try {
@@ -242,22 +382,7 @@ async function handleNewsSearch(request, response) {
   url.searchParams.set('page', String(page))
 
   try {
-    const responseFromApi = await fetch(url.toString(), {
-      method: 'GET',
-      headers: {
-        'X-Api-Key': newsApiKey,
-      },
-      cache: 'no-store',
-    })
-
-    if (!responseFromApi.ok) {
-      json(response, responseFromApi.status, {
-        message: `Falha ao buscar noticias: ${responseFromApi.statusText || 'Erro externo.'}`,
-      })
-      return
-    }
-
-    const data = await responseFromApi.json()
+    const data = await fetchNewsApiJsonWithFallback(url)
     const articles =
       data.articles?.map((article) => ({
         title: article.title ?? 'Sem titulo',
@@ -321,13 +446,151 @@ function normalizeUrl(value) {
     .replace(/\/+$/, '')
 }
 
+function isHttpUrl(value) {
+  try {
+    const url = new URL(value)
+    return url.protocol === 'http:' || url.protocol === 'https:'
+  } catch {
+    return false
+  }
+}
+
+function decodeHtmlEntities(value) {
+  const namedEntities = {
+    amp: '&',
+    apos: "'",
+    gt: '>',
+    lt: '<',
+    nbsp: ' ',
+    quot: '"',
+  }
+
+  return value.replace(/&(#x?[0-9a-f]+|[a-z]+);/gi, (match, entity) => {
+    const normalized = String(entity).toLowerCase()
+
+    if (normalized.startsWith('#x')) {
+      const codePoint = Number.parseInt(normalized.slice(2), 16)
+      return Number.isFinite(codePoint) ? String.fromCodePoint(codePoint) : match
+    }
+
+    if (normalized.startsWith('#')) {
+      const codePoint = Number.parseInt(normalized.slice(1), 10)
+      return Number.isFinite(codePoint) ? String.fromCodePoint(codePoint) : match
+    }
+
+    return namedEntities[normalized] ?? match
+  })
+}
+
+function htmlToText(html) {
+  return decodeHtmlEntities(
+    html
+      .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, ' ')
+      .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, ' ')
+      .replace(/<noscript\b[^>]*>[\s\S]*?<\/noscript>/gi, ' ')
+      .replace(/<svg\b[^>]*>[\s\S]*?<\/svg>/gi, ' ')
+      .replace(/<header\b[^>]*>[\s\S]*?<\/header>/gi, ' ')
+      .replace(/<footer\b[^>]*>[\s\S]*?<\/footer>/gi, ' ')
+      .replace(/<nav\b[^>]*>[\s\S]*?<\/nav>/gi, ' ')
+      .replace(/<aside\b[^>]*>[\s\S]*?<\/aside>/gi, ' ')
+      .replace(/<form\b[^>]*>[\s\S]*?<\/form>/gi, ' ')
+      .replace(/<(br|p|div|section|article|main|h[1-6]|li|blockquote)\b[^>]*>/gi, '\n')
+      .replace(/<[^>]+>/g, ' ')
+      .replace(/[ \t\f\v]+/g, ' ')
+      .replace(/\n\s+/g, '\n')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim(),
+  )
+}
+
+function extractMetaContent(html, selectors) {
+  for (const selector of selectors) {
+    const pattern = new RegExp(
+      `<meta\\b(?=[^>]*(?:property|name)=["']${selector}["'])[^>]*content=["']([^"']+)["'][^>]*>`,
+      'i',
+    )
+    const match = html.match(pattern)
+
+    if (match?.[1]) {
+      return decodeHtmlEntities(match[1].trim())
+    }
+  }
+
+  return ''
+}
+
+function extractArticleText(html) {
+  const candidates = [
+    ...Array.from(html.matchAll(/<article\b[^>]*>[\s\S]*?<\/article>/gi), (match) => match[0]),
+    ...Array.from(html.matchAll(/<main\b[^>]*>[\s\S]*?<\/main>/gi), (match) => match[0]),
+  ]
+    .map(htmlToText)
+    .filter((text) => text.length >= 400)
+    .sort((a, b) => b.length - a.length)
+
+  const text = candidates[0] ?? htmlToText(html)
+
+  return text.slice(0, MAX_ARTICLE_TEXT_LENGTH)
+}
+
+async function fetchArticleFromUrl(url) {
+  if (!isHttpUrl(url)) {
+    return null
+  }
+
+  const pageResponse = await fetch(url, {
+    method: 'GET',
+    headers: {
+      Accept: 'text/html,application/xhtml+xml',
+      'User-Agent':
+        'Mozilla/5.0 (compatible; PortalEscarlateBot/1.0; +https://portal-escarlate.local)',
+    },
+    redirect: 'follow',
+    signal: AbortSignal.timeout(ARTICLE_FETCH_TIMEOUT_MS),
+  })
+
+  if (!pageResponse.ok) {
+    return null
+  }
+
+  const contentType = pageResponse.headers.get('content-type') ?? ''
+
+  if (!contentType.toLowerCase().includes('text/html')) {
+    return null
+  }
+
+  const contentLength = Number.parseInt(pageResponse.headers.get('content-length') ?? '0', 10)
+
+  if (Number.isFinite(contentLength) && contentLength > MAX_ARTICLE_HTML_LENGTH) {
+    return null
+  }
+
+  const html = await pageResponse.text()
+
+  if (html.length > MAX_ARTICLE_HTML_LENGTH) {
+    return null
+  }
+
+  const content = extractArticleText(html)
+  const urlToImage = extractMetaContent(html, ['og:image', 'twitter:image'])
+
+  if (content.length < 300) {
+    return null
+  }
+
+  return {
+    content,
+    urlToImage,
+  }
+}
+
 function buildSummaryPrompt(article) {
   const content = String(article?.content ?? article?.description ?? '').trim()
 
   return [
     'Voce e um editor jornalistico do Portal Escarlate.',
-    'Abaixo esta o conteudo de uma noticia recuperada da NewsAPI.',
-    'O conteudo pode estar incompleto ou truncado. Use o titulo e o link da noticia como contexto adicional para coletar informacoes complementares para o resumo.',
+    'Abaixo esta o conteudo de uma noticia recuperada a partir da URL original e, se necessario, complementada pela NewsAPI.',
+    'O conteudo pode estar incompleto, bloqueado por paywall ou truncado. Use o titulo, fonte e descricao como contexto auxiliar.',
     'Escreva um resumo direto em portugues do Brasil, objetivo e coeso, destacando os pontos principais e o contexto mais importante.',
     'Nao invente fatos que nao estejam no conteudo ou no contexto fornecido. Se o conteudo for incompleto ou truncado, deixe isso claro.',
     'Retorne apenas texto limpo.',
@@ -374,13 +637,6 @@ async function handleNewsSummarize(request, response) {
     return
   }
 
-  const newsApiKey = process.env.NEWS_API_KEY
-
-  if (!newsApiKey) {
-    json(response, 500, { message: 'NEWS_API_KEY nao configurada no servidor.' })
-    return
-  }
-
   try {
     const lookupUrl = new URL(NEWS_API_URL)
     lookupUrl.searchParams.set('q', title)
@@ -388,21 +644,7 @@ async function handleNewsSummarize(request, response) {
     lookupUrl.searchParams.set('sortBy', 'publishedAt')
     lookupUrl.searchParams.set('pageSize', String(PAGE_SIZE * 2))
 
-    const lookupResponse = await fetch(lookupUrl.toString(), {
-      method: 'GET',
-      headers: {
-        'X-Api-Key': newsApiKey,
-      },
-      cache: 'no-store',
-    })
-
-    if (!lookupResponse.ok) {
-      throw new Error(
-        `Falha ao buscar noticia para resumo: ${lookupResponse.statusText || 'Erro externo.'}`,
-      )
-    }
-
-    const lookupData = await lookupResponse.json()
+    const lookupData = await fetchNewsApiJsonWithFallback(lookupUrl)
     const normalizedTargetUrl = normalizeUrl(url)
     const normalizedTargetTitle = title.trim().toLowerCase()
     const foundArticle = (lookupData.articles ?? []).find((article) => {
@@ -412,7 +654,7 @@ async function handleNewsSummarize(request, response) {
       return articleUrl === normalizedTargetUrl || articleTitle === normalizedTargetTitle
     })
 
-    const articleForPrompt = foundArticle ?? {
+    const articleFromNewsApi = foundArticle ?? {
       title,
       url,
       author: author || 'Autor desconhecido',
@@ -420,6 +662,26 @@ async function handleNewsSummarize(request, response) {
       description,
       content: '',
       source,
+    }
+    let articleFromUrl = null
+
+    try {
+      articleFromUrl = await fetchArticleFromUrl(url)
+    } catch (fetchError) {
+      console.warn('[news-service] Could not extract full article from URL', {
+        url,
+        message: fetchError instanceof Error ? fetchError.message : 'Unknown error',
+      })
+    }
+
+    const articleForPrompt = {
+      ...articleFromNewsApi,
+      content:
+        articleFromUrl?.content ||
+        articleFromNewsApi.content ||
+        articleFromNewsApi.description ||
+        description,
+      urlToImage: articleFromNewsApi.urlToImage || articleFromUrl?.urlToImage || urlToImage,
     }
 
     const prompt = buildSummaryPrompt(articleForPrompt)

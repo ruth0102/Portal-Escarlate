@@ -37,7 +37,7 @@ const previewArticles: NewsArticle[] = [
     title: 'Portal Escarlate lança nova plataforma de notícias',
     description:
       'Portal Escarlate é a nova plataforma de notícias para ficar ligados em todos os assuntos — política, economia, ciência, cultura e mais.',
-    url: '#',
+    url: '/news/portal-escarlate',
     source: 'Portal Escarlate',
     publishedAt: new Date().toISOString(),
     author: 'Equipe Portal Escarlate',
@@ -287,14 +287,22 @@ export function NewsSearch() {
     })
   }
 
-  function buildSummaryUrl(_article: NewsArticle): string | null {
-    if (!_article.shortId) {
+  function buildSummaryUrl(article: NewsArticle): string | null {
+    if (article.shortId === 'preview-escarlate') {
+      return article.url
+    }
+
+    if (!article.shortId) {
       return null
     }
 
-    const params = new URLSearchParams({ id: _article.shortId })
+    const params = new URLSearchParams({ id: article.shortId })
 
     return `/news/summary?${params.toString()}`
+  }
+
+  function getNavigationProps(url: string) {
+    return url.startsWith('/') ? {} : { target: '_blank', rel: 'noreferrer noopener' }
   }
 
   async function summarizePage(input: { query: string; articles: NewsArticle[] }) {
@@ -545,50 +553,50 @@ export function NewsSearch() {
       {articles.length > 0 ? (
         <>
           <ul className={styles.newsList}>
-            {articles.map((article, index) => (
-              <li className={styles.newsItem} key={article.url + article.title}>
-                <div className={styles.newsItemHeader}>
-                  <span className={styles.newsItemBadge}>#{(page - 1) * pageSize + index + 1}</span>
-                  <span className={styles.newsItemSource}>{article.source}</span>
-                  <span className={styles.newsItemDate}>{formatPublishedAt(article.publishedAt)}</span>
-                </div>
+            {articles.map((article, index) => {
+              const summaryUrl = buildSummaryUrl(article)
+              const navigationProps = getNavigationProps(article.url)
 
-                <a
-                  className={styles.newsLink}
-                  href={article.url}
-                  target="_blank"
-                  rel="noreferrer noopener"
-                >
-                  {article.title}
-                </a>
-
-                {article.description ? (
-                  <p className={styles.newsDescription}>{article.description}</p>
-                ) : null}
-
-                <div className={styles.newsItemFooter}>
-                  <span className={styles.newsMeta}>Notícia em destaque</span>
-                  <div className={styles.newsItemActions}>
-                    {buildSummaryUrl(article) ? (
-                      <a
-                        className={styles.newsAiButton}
-                        href={buildSummaryUrl(article) || '#'}
-                      >
-                        Resumo com IA
-                      </a>
-                    ) : null}
-                    <a
-                      className={styles.newsOpenLink}
-                      href={article.url}
-                      target="_blank"
-                      rel="noreferrer noopener"
-                    >
-                      Abrir notícia
-                    </a>
+              return (
+                <li className={styles.newsItem} key={article.url + article.title}>
+                  <div className={styles.newsItemHeader}>
+                    <span className={styles.newsItemBadge}>
+                      #{(page - 1) * pageSize + index + 1}
+                    </span>
+                    <span className={styles.newsItemSource}>{article.source}</span>
+                    <span className={styles.newsItemDate}>
+                      {formatPublishedAt(article.publishedAt)}
+                    </span>
                   </div>
-                </div>
-              </li>
-            ))}
+
+                  <a className={styles.newsLink} href={article.url} {...navigationProps}>
+                    {article.title}
+                  </a>
+
+                  {article.description ? (
+                    <p className={styles.newsDescription}>{article.description}</p>
+                  ) : null}
+
+                  <div className={styles.newsItemFooter}>
+                    <span className={styles.newsMeta}>Notícia em destaque</span>
+                    <div className={styles.newsItemActions}>
+                      {summaryUrl ? (
+                        <a
+                          className={styles.newsAiButton}
+                          href={summaryUrl}
+                          {...getNavigationProps(summaryUrl)}
+                        >
+                          Resumo com IA
+                        </a>
+                      ) : null}
+                      <a className={styles.newsOpenLink} href={article.url} {...navigationProps}>
+                        Abrir notícia
+                      </a>
+                    </div>
+                  </div>
+                </li>
+              )
+            })}
           </ul>
 
           {hasSearched && totalPages > 1 ? (
