@@ -6,11 +6,15 @@ import { EmailConnectionsPage } from './pages/dashboard/EmailConnectionsPage'
 import { NewsMetricsPage } from './pages/dashboard/NewsMetricsPage'
 import { FictionalNewsPage } from './pages/news/FictionalNewsPage'
 import { NewsSummaryPage } from './pages/news-summary/NewsSummaryPage'
+import { NewsSummaryPreparePage } from './pages/news-summary/NewsSummaryPreparePage'
 import { TermsPage } from './pages/terms/TermsPage'
 import { VerifyEmailPage } from './pages/verify-email/VerifyEmailPage'
+import { apiFetch } from './lib/api'
+import { sanitizeLoginRedirect } from './lib/auth/redirect'
 
 function AuthEntryPage({ initialMode, loginNotice }: { initialMode?: 'login'; loginNotice?: string }) {
   const navigate = useNavigate()
+  const location = useLocation()
   const [checkingSession, setCheckingSession] = useState(true)
 
   useEffect(() => {
@@ -18,12 +22,13 @@ function AuthEntryPage({ initialMode, loginNotice }: { initialMode?: 'login'; lo
 
     async function loadSession() {
       try {
-        const response = await fetch('/api/auth/me', {
+        const response = await apiFetch('/api/auth/me', {
           signal: controller.signal,
         })
 
         if (response.ok) {
-          navigate('/dashboard', { replace: true })
+          const redirectTo = sanitizeLoginRedirect(new URLSearchParams(location.search).get('redirect'))
+          navigate(redirectTo, { replace: true })
           return
         }
       } catch {
@@ -38,7 +43,7 @@ function AuthEntryPage({ initialMode, loginNotice }: { initialMode?: 'login'; lo
     loadSession()
 
     return () => controller.abort()
-  }, [navigate])
+  }, [location.search, navigate])
 
   if (checkingSession) {
     return null
@@ -67,6 +72,7 @@ export function App() {
       <Route path="/verify-email" element={<VerifyEmailPage />} />
       <Route path="/dashboard" element={<DashboardPage />} />
       <Route path="/news/portal-escarlate" element={<FictionalNewsPage />} />
+      <Route path="/news/summary/prepare" element={<NewsSummaryPreparePage />} />
       <Route path="/news/summary" element={<NewsSummaryPage />} />
       <Route path="/admin/email-connections" element={<EmailConnectionsPage />} />
       <Route path="/admin/news-metrics" element={<NewsMetricsPage />} />

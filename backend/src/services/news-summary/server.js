@@ -1,9 +1,18 @@
 import http from 'node:http'
+import { createHash } from 'node:crypto'
 import { json, noContent, readJson } from '../../shared/http/json.js'
 import { getSessionUser } from '../../shared/http/session-user.js'
+import { buildInternalHeaders } from '../../shared/http/security.js'
 
 const port = Number.parseInt(process.env.NEWS_SUMMARY_SERVICE_PORT ?? '3006', 10)
 const hostname = process.env.HOST ?? '127.0.0.1'
+const AI_UNAVAILABLE_MESSAGE = 'IA invalida no momento.'
+const MIN_MARKED_TEXT_RATIO = 0.82
+const AI_REQUEST_TIMEOUT_MS = 45000
+const SUMMARY_CACHE_TTL_MS = 10 * 60 * 1000
+const SUMMARY_CACHE_MAX_ITEMS = 100
+
+const summaryCache = new Map()
 
 function getAiServiceUrl() {
   if (process.env.AI_SERVICE_URL) {
@@ -17,13 +26,69 @@ function getAiServiceUrl() {
 }
 
 function sanitizeArticle(article, index) {
+  const shortId =
+    typeof article.shortId === 'string' && article.shortId.trim()
+      ? article.shortId.trim()
+      : `noticia-${index + 1}`
+
   return [
     `Noticia ${index + 1}:`,
+    `ShortID: ${shortId}`,
     `Titulo: ${article.title || 'Sem titulo'}`,
     `Fonte: ${article.source || 'Fonte nao informada'}`,
     `Data: ${article.publishedAt || 'Data nao informada'}`,
     `Resumo: ${article.description || 'Sem resumo disponivel'}`,
   ].join('\n')
+}
+
+function buildSummaryCacheKey(input) {
+  const cachePayload = {
+    query: input.query.trim().toLowerCase(),
+    articles: input.articles.map((article, index) => ({
+      shortId: article.shortId || `noticia-${index + 1}`,
+      title: article.title || '',
+      description: article.description || '',
+      source: article.source || '',
+      publishedAt: article.publishedAt || '',
+    })),
+  }
+
+  return createHash('sha256').update(JSON.stringify(cachePayload)).digest('hex')
+}
+
+function getCachedSummary(cacheKey) {
+  const entry = summaryCache.get(cacheKey)
+
+  if (!entry) {
+    return null
+  }
+
+  if (Date.now() - entry.createdAt > SUMMARY_CACHE_TTL_MS) {
+    summaryCache.delete(cacheKey)
+    return null
+  }
+
+  summaryCache.delete(cacheKey)
+  summaryCache.set(cacheKey, entry)
+
+  return entry.value
+}
+
+function setCachedSummary(cacheKey, value) {
+  summaryCache.set(cacheKey, {
+    createdAt: Date.now(),
+    value,
+  })
+
+  while (summaryCache.size > SUMMARY_CACHE_MAX_ITEMS) {
+    const oldestKey = summaryCache.keys().next().value
+
+    if (!oldestKey) {
+      break
+    }
+
+    summaryCache.delete(oldestKey)
+  }
 }
 
 function buildNewsSummaryPrompt(input) {
@@ -32,14 +97,29 @@ function buildNewsSummaryPrompt(input) {
   return [
     'Voce e um editor jornalistico do Portal Escarlate.',
     'Abaixo ha titulos e resumos de noticias retornadas por uma busca.',
-    'Escreva uma sintese central em portugues do Brasil, objetiva e coesa, reunindo os pontos em comum e o contexto mais importante.',
+    'Escreva uma sintese central em portugues do Brasil, com leitura fluida, elegante e jornalistica.',
+    'O texto deve parecer uma analise curta de contexto, conectando os fatos principais em uma narrativa continua, e nao uma colagem de frases soltas.',
+    'Priorize as noticias mais relevantes, recorrentes ou impactantes da lista.',
+    'Voce nao precisa citar todas as noticias, mas deve usar no minimo metade das noticias recebidas e no maximo todas.',
+    'Quando houver noticias parecidas, agrupe a ideia em uma mesma passagem, sem repetir informacoes.',
+    'A sintese deve ser um texto unico, natural e bom de ler.',
+    'Quando uma frase ou trecho estiver relacionado a uma noticia especifica, marque esse trecho no formato [[texto do trecho]]((ShortID)).',
+    'Exemplo: Nessa semana, [[a decisao economica ganhou destaque]]((abc123)) enquanto [[novas medidas foram anunciadas]]((def456)).',
+    'Regra obrigatoria: praticamente todo o texto informativo deve estar dentro de marcacoes [[...]]((ShortID)).',
+    'Trechos sem ShortID devem ser apenas conectivos muito curtos, como "Enquanto isso," ou "No mesmo periodo,".',
+    'Nunca deixe uma frase inteira sem marcacao.',
+    'Nunca deixe nomes, fatos, acontecimentos, locais, numeros, consequencias ou conclusoes fora de marcacao quando vierem de alguma noticia.',
+    'Se uma frase combina duas noticias, divida a frase em dois ou mais trechos marcados, cada um com o ShortID correto.',
+    'O leitor deve conseguir clicar em quase todo o resumo.',
+    'Use apenas ShortIDs recebidos na lista de noticias.',
     'Nao invente fatos que nao estejam nos resumos. Se houver poucos dados, deixe isso claro.',
-    'Retorne apenas texto limpo.',
+    'Retorne apenas texto limpo com essas marcacoes internas.',
     'Nao crie titulo.',
     'Nao use Markdown.',
     'Nao use listas, bullets, numeracao, negrito, italico, hashtags, tabelas, citacoes ou separadores.',
     'Nao comece com frases como "Resumo:", "Sintese:" ou "Noticia central:".',
-    'Use no maximo 2 paragrafos curtos, com ate 120 palavras no total.',
+    'Use de 2 a 4 paragrafos curtos, com ritmo natural e boa transicao entre os assuntos.',
+    'Use entre 180 e 320 palavras quando houver noticias suficientes.',
     '',
     `Busca do usuario: ${input.query}`,
     '',
@@ -64,6 +144,7 @@ async function requestAiSummary(input) {
   const response = await fetch(new URL('/internal/ai/chat', getAiServiceUrl()), {
     method: 'POST',
     headers: {
+      ...buildInternalHeaders(),
       'content-type': 'application/json',
     },
     body: JSON.stringify({
@@ -71,7 +152,7 @@ async function requestAiSummary(input) {
         {
           role: 'system',
           content:
-            'Voce resume noticias com precisao, sem inventar fatos, em texto limpo, sem Markdown, sem titulo e sem listas.',
+            'Voce resume noticias com precisao em texto limpo, sem Markdown, sem titulo e sem listas. Use marcacoes [[trecho]]((shortId)) quando associar trechos a noticias.',
         },
         {
           role: 'user',
@@ -80,12 +161,13 @@ async function requestAiSummary(input) {
       ],
       temperature: 0.3,
     }),
+    signal: AbortSignal.timeout(AI_REQUEST_TIMEOUT_MS),
   })
 
   const payload = await response.json().catch(() => null)
 
   if (!response.ok) {
-    throw new Error(payload?.message ?? 'Nao foi possivel completar a requisicao de IA.')
+    throw new Error(payload?.message ?? AI_UNAVAILABLE_MESSAGE)
   }
 
   if (typeof payload?.content !== 'string') {
@@ -93,6 +175,106 @@ async function requestAiSummary(input) {
   }
 
   return payload
+}
+
+async function requestAiCorrection(input) {
+  const response = await fetch(new URL('/internal/ai/chat', getAiServiceUrl()), {
+    method: 'POST',
+    headers: {
+      ...buildInternalHeaders(),
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify({
+      messages: [
+        {
+          role: 'system',
+          content:
+            'Voce corrige marcacoes de resumo. Retorne apenas o texto corrigido, sem Markdown, sem titulo e sem listas.',
+        },
+        {
+          role: 'user',
+          content: [
+            'O texto abaixo tem muitos trechos sem ShortID.',
+            'Reescreva mantendo uma leitura fluida, mas coloque praticamente todo trecho informativo no formato [[texto]]((ShortID)).',
+            'Trechos sem ShortID so podem ser conectivos curtos.',
+            'Use apenas os ShortIDs listados nas noticias.',
+            '',
+            'Noticias disponiveis:',
+            input.articles.map(sanitizeArticle).join('\n\n'),
+            '',
+            'Texto a corrigir:',
+            input.markedSummary,
+          ].join('\n'),
+        },
+      ],
+      temperature: 0.2,
+    }),
+    signal: AbortSignal.timeout(AI_REQUEST_TIMEOUT_MS),
+  })
+
+  const payload = await response.json().catch(() => null)
+
+  if (!response.ok) {
+    throw new Error(payload?.message ?? AI_UNAVAILABLE_MESSAGE)
+  }
+
+  if (typeof payload?.content !== 'string') {
+    throw new Error('A IA nao retornou uma correcao valida.')
+  }
+
+  return payload
+}
+
+function parseSummarySegments(summary, articles) {
+  const validShortIds = new Set(
+    articles
+      .map((article) => (typeof article.shortId === 'string' ? article.shortId.trim() : ''))
+      .filter(Boolean),
+  )
+  const segments = []
+  const pattern = /\[\[([\s\S]+?)\]\]\(\(([^)]+)\)\)/g
+  let match
+
+  while ((match = pattern.exec(summary)) !== null) {
+    const text = cleanPlainText(match[1] ?? '')
+    const shortId = String(match[2] ?? '').trim()
+
+    if (text && validShortIds.has(shortId)) {
+      segments.push({
+        shortId,
+        text,
+      })
+    }
+  }
+
+  return segments.slice(0, 12)
+}
+
+function cleanMarkedSummary(value) {
+  return value
+    .replace(/^```(?:text)?\s*/i, '')
+    .replace(/\s*```$/i, '')
+    .replace(/^["']|["']$/g, '')
+    .replace(/^\s*(resumo|sintese|síntese|noticia central|notícia central)\s*:\s*/i, '')
+    .trim()
+}
+
+function stripSummaryMarkers(value) {
+  return cleanPlainText(value.replace(/\[\[([\s\S]+?)\]\]\(\([^)]+\)\)/g, '$1'))
+}
+
+function calculateMarkedTextRatio(value) {
+  const plainLength = stripSummaryMarkers(value).replace(/\s+/g, '').length
+  const markedLength = Array.from(value.matchAll(/\[\[([\s\S]+?)\]\]\(\([^)]+\)\)/g)).reduce(
+    (total, match) => total + String(match[1] ?? '').replace(/\s+/g, '').length,
+    0,
+  )
+
+  if (plainLength === 0) {
+    return 0
+  }
+
+  return markedLength / plainLength
 }
 
 async function handleNewsSummary(request, response) {
@@ -105,8 +287,13 @@ async function handleNewsSummary(request, response) {
 
   try {
     payload = await readJson(request)
-  } catch {
-    json(response, 400, { message: 'Nao foi possivel ler os dados para resumo.' })
+  } catch (error) {
+    json(response, error?.status === 413 ? 413 : 400, {
+      message:
+        error?.status === 413
+          ? 'Dados para resumo muito grandes.'
+          : 'Nao foi possivel ler os dados para resumo.',
+    })
     return
   }
 
@@ -119,17 +306,43 @@ async function handleNewsSummary(request, response) {
   }
 
   try {
-    const aiResult = await requestAiSummary({ query, articles })
+    const cacheKey = buildSummaryCacheKey({ query, articles })
+    const cachedSummary = getCachedSummary(cacheKey)
 
-    json(response, 200, {
-      summary: cleanPlainText(aiResult.content),
-      provider: aiResult.provider,
-      model: aiResult.model,
-    })
+    if (cachedSummary) {
+      json(response, 200, cachedSummary)
+      return
+    }
+
+    const aiResult = await requestAiSummary({ query, articles })
+    let markedSummary = cleanMarkedSummary(aiResult.content)
+    let provider = aiResult.provider
+    let model = aiResult.model
+
+    if (calculateMarkedTextRatio(markedSummary) < MIN_MARKED_TEXT_RATIO) {
+      const corrected = await requestAiCorrection({ articles, markedSummary })
+      markedSummary = cleanMarkedSummary(corrected.content)
+      provider = corrected.provider ?? provider
+      model = corrected.model ?? model
+    }
+
+    const segments = parseSummarySegments(markedSummary, articles)
+    const summary = stripSummaryMarkers(markedSummary)
+
+    const responsePayload = {
+      summary,
+      markedSummary,
+      segments,
+      provider,
+      model,
+    }
+
+    setCachedSummary(cacheKey, responsePayload)
+    json(response, 200, responsePayload)
   } catch (error) {
     console.error('[news-summary-service] Failed to summarize news', error)
     json(response, 500, {
-      message: error instanceof Error ? error.message : 'Nao foi possivel gerar o resumo agora.',
+      message: AI_UNAVAILABLE_MESSAGE,
     })
   }
 }

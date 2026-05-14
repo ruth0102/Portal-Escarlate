@@ -1,4 +1,5 @@
 import { query } from '../db/postgres.js'
+import { decryptSecret, encryptSecret, isEncryptedSecret } from '../crypto/secrets.js'
 
 async function listActiveAiConfigsFromTables(apiKeysTable, modelsTable) {
   const result = await query(
@@ -23,6 +24,13 @@ async function listActiveAiConfigsFromTables(apiKeysTable, modelsTable) {
   const configs = []
 
   for (const row of result.rows) {
+    if (row.api_key && !isEncryptedSecret(row.api_key)) {
+      await query(`update ${apiKeysTable} set api_key = $2 where id = $1`, [
+        row.api_key_id,
+        encryptSecret(row.api_key),
+      ])
+    }
+
     let config = configs.find((item) => item.apiKeyId === row.api_key_id)
 
     if (!config) {
@@ -30,7 +38,7 @@ async function listActiveAiConfigsFromTables(apiKeysTable, modelsTable) {
         apiKeyId: row.api_key_id,
         provider: row.provider,
         label: row.label,
-        apiKey: row.api_key,
+        apiKey: decryptSecret(row.api_key),
         models: [],
       }
       configs.push(config)

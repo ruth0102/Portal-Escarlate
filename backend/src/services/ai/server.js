@@ -1,12 +1,17 @@
 import http from 'node:http'
+import { publishEventSafely } from '../../lib/events/event-client.js'
 import { listActiveAiConfigs } from '../../lib/ai/config-repo.js'
 import { json, noContent, readJson } from '../../shared/http/json.js'
 import { getSessionUser } from '../../shared/http/session-user.js'
+import { validateInternalRequest } from '../../shared/http/security.js'
 
 const port = Number.parseInt(process.env.AI_SERVICE_PORT ?? '3004', 10)
 const hostname = process.env.HOST ?? '127.0.0.1'
 const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions'
 const FAILED_AI_TARGET_COOLDOWN_MS = 5 * 60 * 1000
+const AI_UNAVAILABLE_MESSAGE = 'IA invalida no momento.'
+const OPENROUTER_TIMEOUT_MS = 35000
+const AI_TOTAL_TIMEOUT_MS = 40000
 
 let aiConfigsCache = null
 let aiConfigsCachePromise = null
@@ -100,6 +105,7 @@ async function getCachedAiConfigs({ forceRefresh = false } = {}) {
 }
 
 async function requestOpenRouterCompletion(input) {
+  const timeoutMs = Math.max(1000, Math.min(input.timeoutMs ?? OPENROUTER_TIMEOUT_MS, OPENROUTER_TIMEOUT_MS))
   const openRouterResponse = await fetch(OPENROUTER_URL, {
     method: 'POST',
     headers: {
@@ -113,6 +119,7 @@ async function requestOpenRouterCompletion(input) {
       messages: input.messages,
       temperature: input.temperature ?? 0.3,
     }),
+    signal: AbortSignal.timeout(timeoutMs),
   })
 
   const data = await openRouterResponse.json().catch(() => ({}))
@@ -142,6 +149,7 @@ async function completeWithFallback(input) {
   let configs = await getCachedAiConfigs()
   let lastError
   let refreshedAfterFailure = false
+  const deadline = Date.now() + AI_TOTAL_TIMEOUT_MS
 
   while (true) {
     let refreshedDuringLoop = false
@@ -152,6 +160,12 @@ async function completeWithFallback(input) {
       }
 
       for (const model of config.models) {
+        const remainingMs = deadline - Date.now()
+
+        if (remainingMs <= 1000) {
+          throw new Error('Tempo limite da requisicao de IA excedido.')
+        }
+
         const targetId = getAiTargetId(config, model)
 
         if (isAiTargetCoolingDown(targetId)) {
@@ -164,6 +178,7 @@ async function completeWithFallback(input) {
             model,
             messages: input.messages,
             temperature: input.temperature,
+            timeoutMs: remainingMs,
           })
 
           failedAiTargets.delete(targetId)
@@ -222,8 +237,13 @@ async function handleChatCompletion(request, response, { requireSession }) {
 
   try {
     payload = await readJson(request)
-  } catch {
-    json(response, 400, { message: 'Nao foi possivel ler os dados da requisicao de IA.' })
+  } catch (error) {
+    json(response, error?.status === 413 ? 413 : 400, {
+      message:
+        error?.status === 413
+          ? 'Requisicao de IA muito grande.'
+          : 'Nao foi possivel ler os dados da requisicao de IA.',
+    })
     return
   }
 
@@ -242,28 +262,32 @@ async function handleChatCompletion(request, response, { requireSession }) {
           ? Math.min(1, Math.max(0, payload.temperature))
           : undefined,
     })
+    void publishEventSafely({
+      type: 'ai.chat_completed',
+      source: 'ai-service',
+      payload: {
+        provider: result.provider,
+        model: result.model,
+        route: requireSession ? 'public' : 'internal',
+      },
+    })
 
     json(response, 200, result)
   } catch (error) {
     console.error('[ai-service] Failed to complete AI request', error)
-    const providerSuffix =
-      error instanceof AiProviderError
-        ? [
-            error.status ? `status ${error.status}` : '',
-            error.code ? `codigo ${error.code}` : '',
-            error.model ? `modelo ${error.model}` : '',
-          ]
-            .filter(Boolean)
-            .join(', ')
-        : ''
+    void publishEventSafely({
+      type: 'ai.chat_failed',
+      source: 'ai-service',
+      payload: {
+        route: requireSession ? 'public' : 'internal',
+        status: error?.status ?? null,
+        code: error?.code ? String(error.code) : '',
+        model: error?.model ?? '',
+      },
+    })
 
     json(response, 500, {
-      message:
-        error instanceof Error
-          ? providerSuffix
-            ? `${error.message} (${providerSuffix}).`
-            : error.message
-          : 'Nao foi possivel completar a requisicao de IA.',
+      message: AI_UNAVAILABLE_MESSAGE,
     })
   }
 }
@@ -287,6 +311,10 @@ async function route(request, response) {
   }
 
   if (request.method === 'POST' && url.pathname === '/internal/ai/chat') {
+    if (!validateInternalRequest(request, response, json)) {
+      return
+    }
+
     await handleChatCompletion(request, response, { requireSession: false })
     return
   }

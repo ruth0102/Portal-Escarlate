@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
+import { apiFetch } from '../../lib/api'
+import { buildLoginRedirectPath } from '../../lib/auth/redirect'
 import styles from './dashboard.module.css'
 
 type SessionUser = {
@@ -66,7 +68,7 @@ export function EmailConnectionsPage() {
   }, [googleStatus])
 
   async function loadConnections(signal?: AbortSignal) {
-    const response = await fetch('/api/email-connections', { signal })
+    const response = await apiFetch('/api/email-connections', { signal })
     const payload = (await response.json().catch(() => ({}))) as {
       connections?: EmailConnection[]
       message?: string
@@ -84,12 +86,12 @@ export function EmailConnectionsPage() {
 
     async function load() {
       try {
-        const sessionResponse = await fetch('/api/auth/me', {
+        const sessionResponse = await apiFetch('/api/auth/me', {
           signal: controller.signal,
         })
 
         if (!sessionResponse.ok) {
-          navigate('/', { replace: true })
+          navigate(buildLoginRedirectPath(), { replace: true })
           return
         }
 
@@ -122,7 +124,7 @@ export function EmailConnectionsPage() {
     setMessage('')
 
     try {
-      const response = await fetch('/api/email-connections/google/start', {
+      const response = await apiFetch('/api/email-connections/google/start', {
         method: 'POST',
       })
       const payload = (await response.json().catch(() => ({}))) as {
@@ -167,7 +169,7 @@ export function EmailConnectionsPage() {
     setMessage('')
 
     try {
-      const response = await fetch(`/api/email-connections/${connection.id}/priority`, {
+      const response = await apiFetch(`/api/email-connections/${connection.id}/priority`, {
         method: 'PATCH',
         headers: {
           'content-type': 'application/json',
@@ -205,7 +207,7 @@ export function EmailConnectionsPage() {
     setMessage('')
 
     try {
-      const response = await fetch(`/api/email-connections/${connection.id}`, {
+      const response = await apiFetch(`/api/email-connections/${connection.id}`, {
         method: 'DELETE',
       })
 

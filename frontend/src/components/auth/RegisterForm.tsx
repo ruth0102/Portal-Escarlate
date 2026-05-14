@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { AuthForm, type AuthMessage } from './AuthForm'
 import { PasswordField } from './PasswordField'
+import { apiFetch } from '../../lib/api'
 import { registerSchema } from '../../lib/auth/validation'
 import styles from './AuthPortal.module.css'
 
@@ -60,7 +61,7 @@ export function RegisterForm({ active }: RegisterFormProps) {
         setMessage(defaultMessage)
 
         try {
-          const response = await fetch('/api/auth/register/request', {
+          const response = await apiFetch('/api/auth/register/request', {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
@@ -107,6 +108,7 @@ export function RegisterForm({ active }: RegisterFormProps) {
             className={styles.fieldInput}
             type="email"
             name="email"
+            autoComplete="username"
             placeholder="novo@dominio.com"
             required
           />

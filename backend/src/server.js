@@ -1,8 +1,14 @@
 import http from 'node:http'
 import { json } from './shared/http/json.js'
+import {
+  getAllowedOriginForRequest,
+  isAllowedRequestOrigin,
+  isStateChangingMethod,
+} from './shared/http/security.js'
 
 const port = Number.parseInt(process.env.PORT ?? '3000', 10)
 const hostname = process.env.HOST ?? '127.0.0.1'
+const PROXY_TIMEOUT_MS = 70000
 
 function getServiceTarget(urlEnvName, hostEnvName, portEnvName, fallbackPort) {
   const serviceUrl = process.env[urlEnvName]?.trim()
@@ -54,6 +60,10 @@ const services = {
       '3006',
     ),
   },
+  events: {
+    name: 'events',
+    target: getServiceTarget('EVENT_SERVICE_URL', 'EVENT_SERVICE_HOST', 'EVENT_SERVICE_PORT', '3007'),
+  },
 }
 
 function pickService(pathname) {
@@ -95,6 +105,7 @@ function pickService(pathname) {
 async function proxy(request, response, service, url) {
   const target = new URL(url.pathname + url.search, service.target)
   const headers = { ...request.headers }
+  const corsHeaders = getCorsHeaders(request)
 
   delete headers.host
 
@@ -105,6 +116,7 @@ async function proxy(request, response, service, url) {
       body: request.method === 'GET' || request.method === 'HEAD' ? undefined : request,
       duplex: 'half',
       redirect: 'manual',
+      signal: AbortSignal.timeout(PROXY_TIMEOUT_MS),
     })
 
     const responseHeaders = {}
@@ -112,6 +124,8 @@ async function proxy(request, response, service, url) {
     upstream.headers.forEach((value, key) => {
       responseHeaders[key] = value
     })
+
+    Object.assign(responseHeaders, corsHeaders)
 
     response.writeHead(upstream.status, responseHeaders)
 
@@ -137,6 +151,45 @@ async function proxy(request, response, service, url) {
     console.error(`[gateway] Failed to proxy ${url.pathname} to ${service.name}`, error)
     json(response, 502, { message: `Servico ${service.name} indisponivel.` })
   }
+}
+
+function getCorsHeaders(request) {
+  const origin = getAllowedOriginForRequest(request)
+
+  if (!origin) {
+    return {}
+  }
+
+  return {
+    'access-control-allow-origin': origin,
+    'access-control-allow-credentials': 'true',
+    vary: 'Origin',
+  }
+}
+
+function handlePreflight(request, response, url) {
+  if (!url.pathname.startsWith('/api/')) {
+    return false
+  }
+
+  const origin = getAllowedOriginForRequest(request)
+
+  if (!origin) {
+    json(response, 403, { message: 'Origem da requisicao nao permitida.' })
+    return true
+  }
+
+  response.writeHead(204, {
+    'access-control-allow-origin': origin,
+    'access-control-allow-credentials': 'true',
+    'access-control-allow-methods': 'GET,POST,PUT,PATCH,DELETE,OPTIONS',
+    'access-control-allow-headers':
+      request.headers['access-control-request-headers'] ?? 'content-type',
+    'access-control-max-age': '600',
+    vary: 'Origin',
+  })
+  response.end()
+  return true
 }
 
 async function health(response) {
@@ -166,6 +219,10 @@ async function health(response) {
 const server = http.createServer((request, response) => {
   const url = new URL(request.url ?? '/', `http://${request.headers.host ?? `${hostname}:${port}`}`)
 
+  if (request.method === 'OPTIONS' && handlePreflight(request, response, url)) {
+    return
+  }
+
   if (request.method === 'GET' && url.pathname === '/health') {
     health(response).catch((error) => {
       console.error('[gateway] Health check failed', error)
@@ -178,6 +235,11 @@ const server = http.createServer((request, response) => {
 
   if (!service) {
     json(response, 404, { error: 'Not found' })
+    return
+  }
+
+  if (url.pathname.startsWith('/api/') && isStateChangingMethod(request.method) && !isAllowedRequestOrigin(request)) {
+    json(response, 403, { message: 'Origem da requisicao nao permitida.' })
     return
   }
 

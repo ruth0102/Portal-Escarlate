@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { NewsSearch, clearNewsSearchStorage } from './NewsSearch'
+import { apiFetch } from '../../lib/api'
+import { buildLoginRedirectPath } from '../../lib/auth/redirect'
 import styles from './dashboard.module.css'
 
 type SessionUser = {
@@ -19,12 +21,12 @@ export function DashboardPage() {
 
     async function loadSession() {
       try {
-        const response = await fetch('/api/auth/me', {
+        const response = await apiFetch('/api/auth/me', {
           signal: controller.signal,
         })
 
         if (!response.ok) {
-          navigate('/', { replace: true })
+          navigate(buildLoginRedirectPath(), { replace: true })
           return
         }
 
@@ -32,7 +34,7 @@ export function DashboardPage() {
         setUser(payload.user)
       } catch {
         if (!controller.signal.aborted) {
-          navigate('/', { replace: true })
+          navigate(buildLoginRedirectPath(), { replace: true })
         }
       } finally {
         if (!controller.signal.aborted) {
@@ -47,7 +49,7 @@ export function DashboardPage() {
   }, [navigate])
 
   async function handleLogout() {
-    await fetch('/api/auth/logout', { method: 'POST' }).catch(() => undefined)
+    await apiFetch('/api/auth/logout', { method: 'POST' }).catch(() => undefined)
     clearNewsSearchStorage()
     navigate('/', { replace: true })
   }

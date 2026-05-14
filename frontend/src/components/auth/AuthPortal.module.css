@@ -598,3 +598,189 @@
     font-size: clamp(2.6rem, 14vw, 4rem);
   }
 }
+
+@media (max-width: 720px) {
+  .page {
+    min-height: 100svh;
+    align-items: flex-start;
+    justify-content: flex-start;
+    padding: 0;
+    overflow-x: hidden;
+    overflow-y: auto;
+  }
+
+  .page::before,
+  .page::after {
+    opacity: 0.18;
+    filter: blur(26px);
+  }
+
+  .scene {
+    width: 100%;
+    min-height: 100svh;
+    display: grid;
+    grid-template-columns: 1fr;
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+    background:
+      linear-gradient(180deg, rgba(55, 7, 10, 0.8), rgba(8, 3, 4, 0.92)),
+      rgba(8, 3, 4, 0.94);
+  }
+
+  .scene::before {
+    opacity: 0.26;
+  }
+
+  .hero {
+    grid-template-rows: auto;
+    gap: 16px;
+    padding: 20px 14px 16px;
+    border-right: 0;
+    border-bottom: 1px solid rgba(231, 197, 102, 0.1);
+  }
+
+  .hero::after {
+    display: none;
+  }
+
+  .brandStack {
+    gap: 14px;
+  }
+
+  .crest {
+    width: 68px;
+    height: 68px;
+  }
+
+  .crestImage {
+    width: 64px;
+    height: 64px;
+  }
+
+  .headlineBlock {
+    max-width: none;
+    gap: 10px;
+  }
+
+  .eyebrow,
+  .formKicker,
+  .featureLabel,
+  .fieldLabel {
+    letter-spacing: 0.09rem;
+    font-size: 0.66rem;
+  }
+
+  .title {
+    font-size: clamp(2.2rem, 12vw, 3.4rem);
+    line-height: 1;
+  }
+
+  .lead {
+    max-width: none;
+    font-size: 0.96rem;
+    line-height: 1.55;
+  }
+
+  .heroFooter {
+    display: none;
+  }
+
+  .portal {
+    align-items: flex-start;
+    padding: 16px 14px 24px;
+    background: transparent;
+  }
+
+  .portal::before {
+    display: none;
+  }
+
+  .portalWrap {
+    max-width: none;
+    min-height: 0;
+  }
+
+  .formShell {
+    gap: 14px;
+  }
+
+  .formHeader {
+    gap: 7px;
+  }
+
+  .formTitle {
+    font-size: clamp(1.75rem, 8vw, 2.25rem);
+  }
+
+  .formCopy,
+  .panelNote,
+  .privacyNotice {
+    line-height: 1.52;
+  }
+
+  .modeSwitch {
+    border-radius: 12px;
+  }
+
+  .modeButton {
+    min-height: 42px;
+    letter-spacing: 0.08rem;
+  }
+
+  .panel {
+    gap: 12px;
+  }
+
+  .fieldGroup {
+    gap: 11px;
+  }
+
+  .field {
+    gap: 6px;
+  }
+
+  .fieldInput {
+    min-height: 48px;
+    padding-left: 12px;
+    padding-right: 12px;
+    border-radius: 11px;
+  }
+
+  .passwordInput {
+    padding-right: 50px;
+  }
+
+  .passwordToggle {
+    right: 7px;
+  }
+
+  .rowMeta {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+
+  .action {
+    min-height: 50px;
+    border-radius: 11px;
+  }
+
+  .status {
+    min-height: 0;
+    padding: 10px 12px;
+    line-height: 1.42;
+  }
+
+  .microline {
+    letter-spacing: 0.08rem;
+  }
+}
+
+@media (max-width: 380px) {
+  .hero,
+  .portal {
+    padding-left: 10px;
+    padding-right: 10px;
+  }
+}

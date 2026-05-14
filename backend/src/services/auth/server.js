@@ -1,5 +1,7 @@
 import http from 'node:http'
+import { publishEventSafely } from '../../lib/events/event-client.js'
 import { verifyPassword } from '../../lib/auth/password.js'
+import { clearLoginRateLimit, consumeLoginRateLimit } from '../../lib/auth/login-rate-limit.js'
 import {
   DuplicateEmailError,
   createUser,
@@ -16,6 +18,8 @@ import {
 } from '../../lib/auth/session.js'
 import { json, noContent, readJson } from '../../shared/http/json.js'
 import { getSessionUser } from '../../shared/http/session-user.js'
+import { validateInternalRequest } from '../../shared/http/security.js'
+import { getClientIp } from '../../shared/http/client-ip.js'
 
 const port = Number.parseInt(process.env.AUTH_SERVICE_PORT ?? '3001', 10)
 const hostname = process.env.HOST ?? '127.0.0.1'
@@ -41,8 +45,13 @@ async function handleLogin(request, response) {
 
   try {
     payload = await readJson(request)
-  } catch {
-    json(response, 400, { message: 'Nao foi possivel ler os dados de login.' })
+  } catch (error) {
+    json(response, error?.status === 413 ? 413 : 400, {
+      message:
+        error?.status === 413
+          ? 'Dados de login muito grandes.'
+          : 'Nao foi possivel ler os dados de login.',
+    })
     return
   }
 
@@ -52,6 +61,18 @@ async function handleLogin(request, response) {
     json(response, 400, {
       message: parsed.error.issues[0]?.message ?? 'Revise os campos informados.',
       fieldErrors: flattenFieldErrors(parsed.error),
+    })
+    return
+  }
+
+  const loginIdentity = {
+    email: normalizeEmail(parsed.data.email),
+    ip: getClientIp(request),
+  }
+
+  if (!consumeLoginRateLimit(loginIdentity)) {
+    json(response, 429, {
+      message: 'Muitas tentativas de login. Tente novamente em instantes.',
     })
     return
   }
@@ -73,6 +94,17 @@ async function handleLogin(request, response) {
 
     const sessionUser = toSessionUser(user)
     const token = createSessionToken(sessionUser)
+    clearLoginRateLimit(loginIdentity)
+    void publishEventSafely({
+      type: 'auth.login_succeeded',
+      source: 'auth-service',
+      payload: {
+        userId: sessionUser.id,
+        email: sessionUser.email,
+        role: sessionUser.role,
+        ip: loginIdentity.ip,
+      },
+    })
 
     json(response, 200, { user: sessionUser }, { 'set-cookie': buildSessionCookie(token) })
   } catch (error) {
@@ -104,8 +136,13 @@ async function handleInternalCreateUser(request, response) {
 
   try {
     payload = await readJson(request)
-  } catch {
-    json(response, 400, { message: 'Nao foi possivel ler os dados do usuario.' })
+  } catch (error) {
+    json(response, error?.status === 413 ? 413 : 400, {
+      message:
+        error?.status === 413
+          ? 'Dados do usuario muito grandes.'
+          : 'Nao foi possivel ler os dados do usuario.',
+    })
     return
   }
 
@@ -117,9 +154,18 @@ async function handleInternalCreateUser(request, response) {
   }
 
   try {
-    await createUser({
+    const createdUser = await createUser({
       email: normalizeEmail(payload.email),
       passwordHash: payload.passwordHash,
+    })
+    void publishEventSafely({
+      type: 'auth.user_created',
+      source: 'auth-service',
+      payload: {
+        userId: createdUser.id,
+        email: createdUser.email,
+        role: createdUser.role,
+      },
     })
 
     json(response, 201, { message: 'Usuario criado com sucesso.' })
@@ -148,11 +194,19 @@ async function route(request, response) {
   }
 
   if (request.method === 'GET' && url.pathname === '/internal/auth/users/exists') {
+    if (!validateInternalRequest(request, response, json)) {
+      return
+    }
+
     await handleInternalUserExists(response, url)
     return
   }
 
   if (request.method === 'POST' && url.pathname === '/internal/auth/users') {
+    if (!validateInternalRequest(request, response, json)) {
+      return
+    }
+
     await handleInternalCreateUser(request, response)
     return
   }
@@ -163,6 +217,20 @@ async function route(request, response) {
   }
 
   if (request.method === 'POST' && url.pathname === '/api/auth/logout') {
+    const user = getSessionUser(request)
+
+    if (user) {
+      void publishEventSafely({
+        type: 'auth.logout_requested',
+        source: 'auth-service',
+        payload: {
+          userId: user.id,
+          email: user.email,
+          role: user.role,
+        },
+      })
+    }
+
     json(response, 200, { message: 'Sessao encerrada.' }, { 'set-cookie': buildExpiredSessionCookie() })
     return
   }

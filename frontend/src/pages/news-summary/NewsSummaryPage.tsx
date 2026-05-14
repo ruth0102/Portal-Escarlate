@@ -1,29 +1,17 @@
 import { useEffect, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
+import { apiFetch } from '../../lib/api'
+import { buildLoginRedirectPath } from '../../lib/auth/redirect'
 import styles from './news-summary.module.css'
 
 type SummaryState = 'loading' | 'success' | 'error'
 
-type StoredNewsArticle = {
-  shortId: string
-  title: string
-  description: string
-  url: string
-  source: string
-  publishedAt: string
-  author?: string
-}
-
-type StoredPageState = {
-  query?: string
-  articles?: StoredNewsArticle[]
-}
-
-const PAGE_STATE_KEY = 'portal-escarlate:news-search-page-state'
-
 interface SummaryData {
+  id?: string
   title: string
   author: string
+  source?: string
+  publishedAt?: string
   urlToImage: string
   url: string
   summary: string
@@ -37,53 +25,41 @@ export function NewsSummaryPage() {
   const [state, setState] = useState<SummaryState>('loading')
   const [data, setData] = useState<SummaryData | null>(null)
   const [error, setError] = useState('')
+  const [shareStatus, setShareStatus] = useState('')
 
   useEffect(() => {
     const controller = new AbortController()
+    const timeout = window.setTimeout(() => {
+      controller.abort()
+      setState('error')
+      setError('O carregamento do resumo demorou mais que o esperado. Tente novamente.')
+    }, 20000)
 
     async function loadSummary() {
       try {
         const idParam = searchParams.get('id')?.trim() || ''
 
-        let storedState: StoredPageState | null = null
-
-        try {
-          const raw = window.localStorage.getItem(PAGE_STATE_KEY)
-          storedState = raw ? (JSON.parse(raw) as StoredPageState) : null
-        } catch {
-          storedState = null
-        }
-
-        const articles = Array.isArray(storedState?.articles) ? storedState.articles : []
-        const article = idParam ? articles.find((item) => item.shortId === idParam) : undefined
-
-        if (!article) {
+        if (!idParam) {
+          window.clearTimeout(timeout)
           setState('error')
-          setError('Não foi possível localizar a notícia no localStorage para gerar o resumo.')
+          setError('Resumo não informado.')
           return
         }
 
-        const response = await fetch('/api/news/summarize', {
-          method: 'POST',
-          headers: {
-            'content-type': 'application/json',
-          },
-          body: JSON.stringify({
-            title: article.title,
-            url: article.url,
-            description: article.description,
-            source: article.source,
-            publishedAt: article.publishedAt,
-            author: article.author ?? '',
-          }),
+        const response = await apiFetch(`/api/news/summaries/${encodeURIComponent(idParam)}`, {
           signal: controller.signal,
         })
 
-        const payload = (await response.json().catch(() => ({}))) as
-          | SummaryData
-          | { message?: string }
+        const payload = (await response.json().catch(() => ({}))) as SummaryData | { message?: string }
 
         if (!response.ok) {
+          if (response.status === 401) {
+            window.clearTimeout(timeout)
+            navigate(buildLoginRedirectPath(), { replace: true })
+            return
+          }
+
+          window.clearTimeout(timeout)
           setState('error')
           setError(
             'message' in payload
@@ -95,6 +71,7 @@ export function NewsSummaryPage() {
 
         setData(payload as SummaryData)
         setState('success')
+        window.clearTimeout(timeout)
       } catch (err) {
         if (!controller.signal.aborted) {
           setState('error')
@@ -105,7 +82,10 @@ export function NewsSummaryPage() {
 
     loadSummary()
 
-    return () => controller.abort()
+    return () => {
+      window.clearTimeout(timeout)
+      controller.abort()
+    }
   }, [searchParams])
 
   if (state === 'loading') {
@@ -113,7 +93,7 @@ export function NewsSummaryPage() {
       <main className={styles.page}>
         <section className={styles.loadingContainer}>
           <div className={styles.spinner} />
-          <p className={styles.loadingText}>Gerando resumo com inteligência artificial...</p>
+          <p className={styles.loadingText}>Carregando resumo com inteligência artificial...</p>
         </section>
       </main>
     )
@@ -131,6 +111,32 @@ export function NewsSummaryPage() {
         </section>
       </main>
     )
+  }
+
+  const summaryData = data
+
+  async function handleShare() {
+    const shareUrl = window.location.href
+
+    setShareStatus('')
+
+    try {
+      if (navigator.share) {
+        await navigator.share({
+          title: summaryData.title,
+          text: 'Resumo da notícia no Portal Escarlate',
+          url: shareUrl,
+        })
+        return
+      }
+
+      await navigator.clipboard.writeText(shareUrl)
+      setShareStatus('Link copiado')
+      window.setTimeout(() => setShareStatus(''), 2400)
+    } catch {
+      setShareStatus('Não foi possível compartilhar')
+      window.setTimeout(() => setShareStatus(''), 2400)
+    }
   }
 
   return (
@@ -160,6 +166,12 @@ export function NewsSummaryPage() {
           <div className={styles.heroCopy}>
             <span className={styles.heroEyebrow}>Leitura guiada por IA</span>
             <h1 className={styles.title}>{data.title}</h1>
+            <div className={styles.shareRow}>
+              <button className={styles.shareButton} type="button" onClick={handleShare}>
+                Compartilhar
+              </button>
+              {shareStatus ? <span className={styles.shareStatus}>{shareStatus}</span> : null}
+            </div>
             <p className={styles.heroText}>
               Uma síntese objetiva da notícia, organizada para leitura rápida e clara.
             </p>

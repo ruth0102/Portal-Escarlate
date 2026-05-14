@@ -97,5 +97,7 @@ export function buildSessionCookie(token) {
 }
 
 export function buildExpiredSessionCookie() {
-  return `${SESSION_COOKIE_NAME}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0`
+  const secure = process.env.NODE_ENV === 'production' ? '; Secure' : ''
+
+  return `${SESSION_COOKIE_NAME}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0${secure}`
 }

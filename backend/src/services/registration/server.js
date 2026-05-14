@@ -12,8 +12,13 @@ async function handleRegisterRequest(request, response) {
 
   try {
     payload = await readJson(request)
-  } catch {
-    json(response, 400, { message: 'Nao foi possivel ler os dados do cadastro.' })
+  } catch (error) {
+    json(response, error?.status === 413 ? 413 : 400, {
+      message:
+        error?.status === 413
+          ? 'Dados do cadastro muito grandes.'
+          : 'Nao foi possivel ler os dados do cadastro.',
+    })
     return
   }
 

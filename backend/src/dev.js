@@ -32,6 +32,11 @@ const processes = [
     args: ['--env-file=../.env', '--watch', 'src/services/news-summary/server.js'],
   },
   {
+    name: 'event-service',
+    command: process.execPath,
+    args: ['--env-file=../.env', '--watch', 'src/services/events/server.js'],
+  },
+  {
     name: 'gateway',
     command: process.execPath,
     args: ['--env-file=../.env', '--watch', 'src/server.js'],

@@ -55,3 +55,70 @@ export async function listNewsSearchMetricRows() {
     lastSearchedAt: row.last_searched_at,
   }))
 }
+
+export async function listCachedSearchThemes(queries) {
+  if (!Array.isArray(queries) || queries.length === 0) {
+    return new Map()
+  }
+
+  const normalizedQueries = queries.map((item) => item.trim().toLowerCase()).filter(Boolean)
+
+  if (normalizedQueries.length === 0) {
+    return new Map()
+  }
+
+  let result
+
+  try {
+    result = await query(
+      `select query_normalized, theme
+       from news_search_theme_cache
+       where query_normalized = any($1::text[])`,
+      [normalizedQueries],
+    )
+  } catch (error) {
+    if (error?.code === '42P01') {
+      return new Map()
+    }
+
+    throw error
+  }
+
+  return new Map(result.rows.map((row) => [row.query_normalized, row.theme]))
+}
+
+export async function upsertSearchThemes(themeByQuery) {
+  if (!(themeByQuery instanceof Map) || themeByQuery.size === 0) {
+    return
+  }
+
+  const rows = Array.from(themeByQuery.entries())
+    .map(([queryNormalized, theme]) => ({
+      queryNormalized: String(queryNormalized ?? '').trim().toLowerCase(),
+      theme: String(theme ?? '').trim(),
+    }))
+    .filter((row) => row.queryNormalized && row.theme)
+
+  if (rows.length === 0) {
+    return
+  }
+
+  try {
+    await query(
+      `insert into news_search_theme_cache (query_normalized, theme)
+       select query_normalized, theme
+       from jsonb_to_recordset($1::jsonb) as input(query_normalized text, theme text)
+       on conflict (query_normalized)
+       do update set
+         theme = excluded.theme,
+         updated_at = now()`,
+      [JSON.stringify(rows.map((row) => ({ query_normalized: row.queryNormalized, theme: row.theme })))],
+    )
+  } catch (error) {
+    if (error?.code === '42P01') {
+      return
+    }
+
+    throw error
+  }
+}

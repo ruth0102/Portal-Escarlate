@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { FormEvent } from 'react'
+import type { FormEvent, KeyboardEvent, ReactNode } from 'react'
+import { useNavigate } from 'react-router-dom'
+import { apiFetch } from '../../lib/api'
 import styles from './dashboard.module.css'
 
 type NewsArticle = {
@@ -7,6 +9,7 @@ type NewsArticle = {
   title: string
   description: string
   url: string
+  urlToImage?: string
   source: string
   publishedAt: string
   author?: string
@@ -26,9 +29,26 @@ type SearchHistoryResponse = {
   message?: string
 }
 
+type SummarySegment = {
+  shortId: string
+  text: string
+}
+
 type AiSummaryResponse = {
   summary?: string
+  markedSummary?: string
+  segments?: SummarySegment[]
   message?: string
+}
+
+function LoadingSignal({ label }: { label: string }) {
+  return (
+    <span className={styles.loadingSignal} aria-hidden="true">
+      <span className={styles.loadingCore} />
+      <span className={styles.loadingOrbit} />
+      <span className={styles.loadingLabel}>{label}</span>
+    </span>
+  )
 }
 
 const previewArticles: NewsArticle[] = [
@@ -101,6 +121,8 @@ function loadPageState() {
       activeQuery?: string
       articles?: NewsArticle[]
       summary?: string
+      markedSummary?: string
+      summarySegments?: SummarySegment[]
       page?: number
       totalPages?: number
       totalResults?: number
@@ -117,6 +139,8 @@ function savePageState(state: {
   activeQuery?: string
   articles?: NewsArticle[]
   summary?: string
+  markedSummary?: string
+  summarySegments?: SummarySegment[]
   page?: number
   totalPages?: number
   totalResults?: number
@@ -175,6 +199,7 @@ function attachShortIds(articles: NewsArticle[]) {
 }
 
 export function NewsSearch() {
+  const navigate = useNavigate()
   const newsSearchRef = useRef<HTMLDivElement | null>(null)
   const [query, setQuery] = useState('')
   const [activeQuery, setActiveQuery] = useState('')
@@ -189,8 +214,11 @@ export function NewsSearch() {
   const [totalResults, setTotalResults] = useState(0)
   const [pageSize, setPageSize] = useState(20)
   const [aiSummary, setAiSummary] = useState('')
+  const [markedAiSummary, setMarkedAiSummary] = useState('')
+  const [typedAiSummary, setTypedAiSummary] = useState('')
   const [aiSummaryLoading, setAiSummaryLoading] = useState(false)
   const [aiSummaryError, setAiSummaryError] = useState('')
+  const [highlightedArticleId, setHighlightedArticleId] = useState('')
 
   const canSubmit = useMemo(() => query.trim().length >= 2 && !loading, [query, loading])
   const suggestions = useMemo(() => {
@@ -206,6 +234,35 @@ export function NewsSearch() {
   }, [history, query])
 
   useEffect(() => {
+    const summaryForTyping = markedAiSummary || aiSummary
+
+    if (!summaryForTyping) {
+      setTypedAiSummary('')
+      return
+    }
+
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      setTypedAiSummary(summaryForTyping)
+      return
+    }
+
+    setTypedAiSummary('')
+
+    let index = 0
+    const chunkSize = Math.max(3, Math.ceil(summaryForTyping.length / 180))
+    const timer = window.setInterval(() => {
+      index += chunkSize
+      setTypedAiSummary(summaryForTyping.slice(0, index))
+
+      if (index >= summaryForTyping.length) {
+        window.clearInterval(timer)
+      }
+    }, 18)
+
+    return () => window.clearInterval(timer)
+  }, [aiSummary, markedAiSummary])
+
+  useEffect(() => {
     const localHistory = loadSearchHistory()
     setHistory(localHistory)
 
@@ -213,7 +270,7 @@ export function NewsSearch() {
 
     async function loadRemoteHistory() {
       try {
-        const response = await fetch('/api/news/search/history', {
+        const response = await apiFetch('/api/news/search/history', {
           signal: controller.signal,
         })
 
@@ -248,6 +305,7 @@ export function NewsSearch() {
           activeQuery: saved.activeQuery,
           articles: restoredArticles,
           summary: saved.summary,
+          summarySegments: saved.summarySegments,
           page: saved.page,
           totalPages: saved.totalPages,
           totalResults: saved.totalResults,
@@ -259,6 +317,7 @@ export function NewsSearch() {
       if (typeof saved.query === 'string') setQuery(saved.query)
       if (typeof saved.activeQuery === 'string') setActiveQuery(saved.activeQuery)
       if (typeof saved.summary === 'string') setAiSummary(saved.summary)
+      if (typeof saved.markedSummary === 'string') setMarkedAiSummary(saved.markedSummary)
       if (typeof saved.page === 'number') setPage(saved.page)
       if (typeof saved.totalPages === 'number') setTotalPages(saved.totalPages)
       if (typeof saved.totalResults === 'number') setTotalResults(saved.totalResults)
@@ -268,6 +327,32 @@ export function NewsSearch() {
 
     return () => controller.abort()
   }, [])
+
+  useEffect(() => {
+    if (!highlightedArticleId) {
+      return undefined
+    }
+
+    let ignoreInitialScroll = true
+    const resetInitialScroll = window.setTimeout(() => {
+      ignoreInitialScroll = false
+    }, 700)
+
+    function clearHighlightOnScroll() {
+      if (ignoreInitialScroll) {
+        return
+      }
+
+      setHighlightedArticleId('')
+    }
+
+    window.addEventListener('scroll', clearHighlightOnScroll, { passive: true })
+
+    return () => {
+      window.clearTimeout(resetInitialScroll)
+      window.removeEventListener('scroll', clearHighlightOnScroll)
+    }
+  }, [highlightedArticleId])
 
   function rememberSearch(value: string) {
     const normalized = value.trim()
@@ -287,22 +372,99 @@ export function NewsSearch() {
     })
   }
 
-  function buildSummaryUrl(article: NewsArticle): string | null {
-    if (article.shortId === 'preview-escarlate') {
-      return article.url
-    }
-
-    if (!article.shortId) {
-      return null
-    }
-
-    const params = new URLSearchParams({ id: article.shortId })
-
-    return `/news/summary?${params.toString()}`
-  }
-
   function getNavigationProps(url: string) {
     return url.startsWith('/') ? {} : { target: '_blank', rel: 'noreferrer noopener' }
+  }
+
+  async function openArticleSummary(article: NewsArticle) {
+    if (article.shortId === 'preview-escarlate') {
+      navigate(article.url)
+      return
+    }
+
+    navigate(`/news/summary/prepare?id=${encodeURIComponent(article.shortId)}`)
+  }
+
+  function scrollToArticle(shortId: string) {
+    const target = document.getElementById(`news-card-${shortId}`)
+
+    if (!target) {
+      return
+    }
+
+    target.scrollIntoView({
+      behavior: 'smooth',
+      block: 'center',
+    })
+    setHighlightedArticleId(shortId)
+  }
+
+  function handleSummarySegmentKeyDown(event: KeyboardEvent<HTMLSpanElement>, shortId: string) {
+    if (event.key !== 'Enter' && event.key !== ' ') {
+      return
+    }
+
+    event.preventDefault()
+    scrollToArticle(shortId)
+  }
+
+  function renderMarkedSummaryInline(source: string) {
+    const nodes: ReactNode[] = []
+    const pattern = /\[\[([\s\S]+?)\]\]\(\(([^)]+)\)\)/g
+    let cursor = 0
+    let match
+
+    while ((match = pattern.exec(source)) !== null) {
+      if (match.index > cursor) {
+        nodes.push(source.slice(cursor, match.index))
+      }
+
+      const segmentText = match[1] ?? ''
+      const shortId = String(match[2] ?? '').trim()
+
+      nodes.push(
+        <span
+          className={styles.aiSummarySegment}
+          role="button"
+          tabIndex={0}
+          key={`${shortId}-${match.index}`}
+          onClick={() => scrollToArticle(shortId)}
+          onKeyDown={(event) => handleSummarySegmentKeyDown(event, shortId)}
+          title="Ir para a notícia relacionada"
+        >
+          {segmentText}
+        </span>,
+      )
+
+      cursor = match.index + match[0].length
+    }
+
+    if (cursor < source.length) {
+      const tail = source.slice(cursor)
+      nodes.push(tail.replace(/\[\[|\]\]\(\([^)]*$/g, ''))
+    }
+
+    return nodes
+  }
+
+  function renderTypedSummary() {
+    const visibleSource = typedAiSummary
+
+    if (!markedAiSummary) {
+      return visibleSource.split(/\n{2,}/).map((paragraph, index) => (
+        <p className={styles.aiSummaryParagraph} key={`${paragraph}-${index}`}>
+          {paragraph}
+        </p>
+      ))
+    }
+
+    const paragraphs = visibleSource.split(/\n{2,}/).filter((paragraph) => paragraph.trim())
+
+    return paragraphs.map((paragraph, index) => (
+      <p className={styles.aiSummaryParagraph} key={`${paragraph}-${index}`}>
+        {renderMarkedSummaryInline(paragraph)}
+      </p>
+    ))
   }
 
   async function summarizePage(input: { query: string; articles: NewsArticle[] }) {
@@ -312,16 +474,18 @@ export function NewsSearch() {
 
     if (summarizableArticles.length === 0) {
       setAiSummary('')
+      setMarkedAiSummary('')
       setAiSummaryError('')
       return
     }
 
     setAiSummary('')
+    setMarkedAiSummary('')
     setAiSummaryError('')
     setAiSummaryLoading(true)
 
     try {
-      const response = await fetch('/api/news-summary', {
+      const response = await apiFetch('/api/news-summary', {
         method: 'POST',
         headers: {
           'content-type': 'application/json',
@@ -329,6 +493,7 @@ export function NewsSearch() {
         body: JSON.stringify({
           query: input.query,
           articles: summarizableArticles.map((article) => ({
+            shortId: article.shortId,
             title: article.title,
             description: article.description,
             source: article.source,
@@ -347,7 +512,18 @@ export function NewsSearch() {
       }
 
       const nextSummary = data.summary ?? ''
+      const nextMarkedSummary = data.markedSummary ?? nextSummary
+      const nextSegments = Array.isArray(data.segments)
+        ? data.segments.filter(
+            (segment): segment is SummarySegment =>
+              typeof segment?.shortId === 'string' &&
+              segment.shortId.trim().length > 0 &&
+              typeof segment?.text === 'string' &&
+              segment.text.trim().length > 0,
+          )
+        : []
       setAiSummary(nextSummary)
+      setMarkedAiSummary(nextMarkedSummary)
 
       try {
         const currentSavedState = loadPageState()
@@ -356,6 +532,8 @@ export function NewsSearch() {
           activeQuery: input.query,
           articles: summarizableArticles,
           summary: nextSummary,
+          markedSummary: nextMarkedSummary,
+          summarySegments: nextSegments,
           page: currentSavedState?.page ?? page,
           totalPages: currentSavedState?.totalPages ?? totalPages,
           totalResults: currentSavedState?.totalResults ?? totalResults,
@@ -375,12 +553,13 @@ export function NewsSearch() {
   async function searchNews(input: { query: string; page: number; isSearch: boolean }) {
     setError('')
     setAiSummary('')
+    setMarkedAiSummary('')
     setAiSummaryError('')
     setHasSearched(true)
     setLoading(true)
 
     try {
-      const response = await fetch('/api/news/search', {
+      const response = await apiFetch('/api/news/search', {
         method: 'POST',
         headers: {
           'content-type': 'application/json',
@@ -520,6 +699,13 @@ export function NewsSearch() {
 
       {error ? <p className={styles.newsError}>{error}</p> : null}
 
+      {loading ? (
+        <div className={styles.loadingPanel} role="status" aria-live="polite">
+          <LoadingSignal label="Buscando" />
+          <span>Consultando fontes e preparando os resultados...</span>
+        </div>
+      ) : null}
+
       {hasSearched && !loading && !error && articles.length === 0 ? (
         <p className={styles.newsHint}>Nenhuma notícia encontrada para este termo.</p>
       ) : null}
@@ -537,9 +723,17 @@ export function NewsSearch() {
         <section className={styles.aiSummaryBox} aria-live="polite">
           <span className={styles.aiSummaryLabel}>Síntese da página</span>
           {aiSummaryLoading ? (
-            <p className={styles.aiSummaryText}>Gerando resumo central das notícias...</p>
+            <div className={styles.aiSummaryLoading} role="status">
+              <LoadingSignal label="IA" />
+              <span>Gerando síntese central das notícias...</span>
+            </div>
           ) : aiSummary ? (
-            <p className={styles.aiSummaryText}>{aiSummary}</p>
+            <div className={styles.aiSummaryText}>
+              {renderTypedSummary()}
+              {typedAiSummary.length < (markedAiSummary || aiSummary).length ? (
+                <span className={styles.typingCaret} aria-hidden="true" />
+              ) : null}
+            </div>
           ) : aiSummaryError ? (
             <p className={styles.aiSummaryError}>{aiSummaryError}</p>
           ) : (
@@ -554,11 +748,16 @@ export function NewsSearch() {
         <>
           <ul className={styles.newsList}>
             {articles.map((article, index) => {
-              const summaryUrl = buildSummaryUrl(article)
               const navigationProps = getNavigationProps(article.url)
 
               return (
-                <li className={styles.newsItem} key={article.url + article.title}>
+                <li
+                  id={`news-card-${article.shortId}`}
+                  className={`${styles.newsItem} ${
+                    highlightedArticleId === article.shortId ? styles.newsItemHighlighted : ''
+                  }`}
+                  key={article.url + article.title}
+                >
                   <div className={styles.newsItemHeader}>
                     <span className={styles.newsItemBadge}>
                       #{(page - 1) * pageSize + index + 1}
@@ -569,7 +768,11 @@ export function NewsSearch() {
                     </span>
                   </div>
 
-                  <a className={styles.newsLink} href={article.url} {...navigationProps}>
+                  <a
+                    className={styles.newsLink}
+                    href={article.url}
+                    {...navigationProps}
+                  >
                     {article.title}
                   </a>
 
@@ -580,15 +783,13 @@ export function NewsSearch() {
                   <div className={styles.newsItemFooter}>
                     <span className={styles.newsMeta}>Notícia em destaque</span>
                     <div className={styles.newsItemActions}>
-                      {summaryUrl ? (
-                        <a
-                          className={styles.newsAiButton}
-                          href={summaryUrl}
-                          {...getNavigationProps(summaryUrl)}
-                        >
-                          Resumo com IA
-                        </a>
-                      ) : null}
+                      <button
+                        className={styles.newsAiButton}
+                        type="button"
+                        onClick={() => openArticleSummary(article)}
+                      >
+                        Resumo com IA
+                      </button>
                       <a className={styles.newsOpenLink} href={article.url} {...navigationProps}>
                         Abrir notícia
                       </a>

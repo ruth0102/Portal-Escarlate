@@ -1,4 +1,5 @@
 import http from 'node:http'
+import { publishEventSafely } from '../../lib/events/event-client.js'
 import {
   deleteEmailConnection,
   listEmailConnectionsWithTokens,
@@ -15,6 +16,7 @@ import {
 import { sendVerificationEmail } from './lib/send-verification-email.js'
 import { json, noContent, readJson } from '../../shared/http/json.js'
 import { getSessionUser } from '../../shared/http/session-user.js'
+import { validateInternalRequest } from '../../shared/http/security.js'
 
 const port = Number.parseInt(process.env.EMAIL_SERVICE_PORT ?? '3005', 10)
 const hostname = process.env.HOST ?? '127.0.0.1'
@@ -51,13 +53,30 @@ function validateVerificationPayload(payload) {
   return null
 }
 
+function validateEventPayload(payload) {
+  if (!payload || typeof payload !== 'object') {
+    return 'Evento ausente.'
+  }
+
+  if (payload.type !== 'email.verification_requested') {
+    return 'Tipo de evento nao suportado pelo servico de e-mail.'
+  }
+
+  return validateVerificationPayload(payload.payload)
+}
+
 async function handleVerificationEmail(request, response) {
   let payload
 
   try {
     payload = await readJson(request)
-  } catch {
-    json(response, 400, { message: 'Nao foi possivel ler os dados do e-mail.' })
+  } catch (error) {
+    json(response, error?.status === 413 ? 413 : 400, {
+      message:
+        error?.status === 413
+          ? 'Dados do e-mail muito grandes.'
+          : 'Nao foi possivel ler os dados do e-mail.',
+    })
     return
   }
 
@@ -73,11 +92,70 @@ async function handleVerificationEmail(request, response) {
       to: payload.to.trim(),
       verificationUrl: payload.verificationUrl.trim(),
     })
+    void publishEventSafely({
+      type: 'email.verification_sent',
+      source: 'email-service',
+      payload: {
+        to: payload.to.trim(),
+        via: 'internal-endpoint',
+      },
+    })
 
     json(response, 200, { message: 'E-mail de verificacao enviado.' })
   } catch (error) {
     console.error('[email-service] Failed to send verification email', error)
     json(response, 502, { message: 'Nao foi possivel enviar o e-mail de verificacao.' })
+  }
+}
+
+async function handleInternalEvent(request, response) {
+  if (!validateInternalRequest(request, response, json)) {
+    return
+  }
+
+  let payload
+
+  try {
+    payload = await readJson(request)
+  } catch (error) {
+    json(response, error?.status === 413 ? 413 : 400, {
+      message:
+        error?.status === 413
+          ? 'Evento muito grande.'
+          : 'Nao foi possivel ler os dados do evento.',
+    })
+    return
+  }
+
+  const errorMessage = validateEventPayload(payload)
+
+  if (errorMessage) {
+    json(response, 400, { message: errorMessage })
+    return
+  }
+
+  try {
+    await sendVerificationEmail({
+      to: payload.payload.to.trim(),
+      verificationUrl: payload.payload.verificationUrl.trim(),
+    })
+    void publishEventSafely({
+      type: 'email.verification_sent',
+      source: 'email-service',
+      payload: {
+        to: payload.payload.to.trim(),
+        requestedEventId: payload.id ?? '',
+        via: 'event-bus',
+      },
+    })
+
+    json(response, 200, {
+      message: 'Evento processado com sucesso.',
+      eventId: payload.id,
+    })
+  } catch (error) {
+    console.error('[email-service] Failed to process event', error)
+    json(response, 502, { message: 'Nao foi possivel processar o evento de e-mail.' })
   }
 }
 
@@ -171,6 +249,15 @@ async function handleGoogleCallback(request, response, url) {
       refreshToken: connection.refreshToken,
       priority: 100,
     })
+    void publishEventSafely({
+      type: 'email.connection_created',
+      source: 'email-service',
+      payload: {
+        provider: 'gmail',
+        email: connection.email,
+        priority: 100,
+      },
+    })
 
     response.writeHead(302, { location: buildAdminConnectionsUrl('connected') })
     response.end()
@@ -190,8 +277,13 @@ async function handleUpdatePriority(request, response, id) {
 
   try {
     payload = await readJson(request)
-  } catch {
-    json(response, 400, { message: 'Nao foi possivel ler os dados da conexao.' })
+  } catch (error) {
+    json(response, error?.status === 413 ? 413 : 400, {
+      message:
+        error?.status === 413
+          ? 'Dados da conexao muito grandes.'
+          : 'Nao foi possivel ler os dados da conexao.',
+    })
     return
   }
 
@@ -209,6 +301,16 @@ async function handleUpdatePriority(request, response, id) {
       json(response, 404, { message: 'Conexao nao encontrada.' })
       return
     }
+    void publishEventSafely({
+      type: 'email.connection_priority_updated',
+      source: 'email-service',
+      payload: {
+        id: connection.id,
+        provider: connection.provider,
+        email: connection.email,
+        priority: connection.priority,
+      },
+    })
 
     json(response, 200, { connection })
   } catch (error) {
@@ -229,6 +331,13 @@ async function handleDeleteConnection(request, response, id) {
       json(response, 404, { message: 'Conexao nao encontrada.' })
       return
     }
+    void publishEventSafely({
+      type: 'email.connection_deleted',
+      source: 'email-service',
+      payload: {
+        id,
+      },
+    })
 
     noContent(response)
   } catch (error) {
@@ -251,7 +360,16 @@ async function route(request, response) {
   }
 
   if (request.method === 'POST' && url.pathname === '/internal/email/verification') {
+    if (!validateInternalRequest(request, response, json)) {
+      return
+    }
+
     await handleVerificationEmail(request, response)
+    return
+  }
+
+  if (request.method === 'POST' && url.pathname === '/internal/events') {
+    await handleInternalEvent(request, response)
     return
   }
 

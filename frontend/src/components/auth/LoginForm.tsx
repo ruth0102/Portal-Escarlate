@@ -2,6 +2,8 @@ import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { AuthForm, type AuthMessage } from './AuthForm'
 import { PasswordField } from './PasswordField'
+import { apiFetch } from '../../lib/api'
+import { sanitizeLoginRedirect } from '../../lib/auth/redirect'
 import { loginSchema } from '../../lib/auth/validation'
 import styles from './AuthPortal.module.css'
 
@@ -17,6 +19,7 @@ const defaultMessage: AuthMessage = {
 
 export function LoginForm({ active, initialNotice }: LoginFormProps) {
   const navigate = useNavigate()
+  const redirectTo = sanitizeLoginRedirect(new URLSearchParams(window.location.search).get('redirect'))
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState<AuthMessage>(
     initialNotice
@@ -65,7 +68,7 @@ export function LoginForm({ active, initialNotice }: LoginFormProps) {
         setMessage(defaultMessage)
 
         try {
-          const response = await fetch('/api/auth/login', {
+          const response = await apiFetch('/api/auth/login', {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
@@ -88,7 +91,7 @@ export function LoginForm({ active, initialNotice }: LoginFormProps) {
             tone: 'success',
             text: 'Acesso confirmado. Redirecionando para a ala reservada...',
           })
-          navigate('/dashboard')
+          navigate(redirectTo, { replace: true })
         } catch {
           setMessage({
             tone: 'error',
@@ -106,6 +109,7 @@ export function LoginForm({ active, initialNotice }: LoginFormProps) {
             className={styles.fieldInput}
             type="email"
             name="email"
+            autoComplete="username"
             placeholder="usuario@dominio.com"
             required
           />

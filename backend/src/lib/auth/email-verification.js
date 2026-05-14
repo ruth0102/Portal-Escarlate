@@ -1,6 +1,8 @@
 import { randomBytes } from 'node:crypto'
 import { getAppUrl } from '../env.js'
+import { publishEvent, publishEventSafely } from '../events/event-client.js'
 import { hashPassword } from './password.js'
+import { buildInternalHeaders } from '../../shared/http/security.js'
 import { consumeRegisterRateLimit } from './register-rate-limit.js'
 import {
   consumePendingRegistration,
@@ -20,17 +22,6 @@ function generateVerificationToken() {
   return randomBytes(32).toString('base64url')
 }
 
-function getEmailServiceUrl() {
-  if (process.env.EMAIL_SERVICE_URL) {
-    return process.env.EMAIL_SERVICE_URL.replace(/\/+$/g, '')
-  }
-
-  const host = process.env.EMAIL_SERVICE_HOST ?? process.env.HOST ?? '127.0.0.1'
-  const port = process.env.EMAIL_SERVICE_PORT ?? '3005'
-
-  return `http://${host}:${port}`
-}
-
 function getAuthServiceUrl() {
   if (process.env.AUTH_SERVICE_URL) {
     return process.env.AUTH_SERVICE_URL.replace(/\/+$/g, '')
@@ -43,28 +34,20 @@ function getAuthServiceUrl() {
 }
 
 async function requestVerificationEmail(input) {
-  const response = await fetch(new URL('/internal/email/verification', getEmailServiceUrl()), {
-    method: 'POST',
-    headers: {
-      'content-type': 'application/json',
-    },
-    body: JSON.stringify(input),
+  await publishEvent({
+    type: 'email.verification_requested',
+    source: 'registration-service',
+    payload: input,
   })
-
-  if (response.ok) {
-    return
-  }
-
-  const payload = await response.json().catch(() => null)
-
-  throw new Error(payload?.message ?? 'Nao foi possivel solicitar o envio do e-mail.')
 }
 
 async function checkAuthUserExists(email) {
   const url = new URL('/internal/auth/users/exists', getAuthServiceUrl())
   url.searchParams.set('email', email)
 
-  const response = await fetch(url)
+  const response = await fetch(url, {
+    headers: buildInternalHeaders(),
+  })
   const payload = await response.json().catch(() => null)
 
   if (!response.ok) {
@@ -78,6 +61,7 @@ async function requestAuthUserCreation(input) {
   const response = await fetch(new URL('/internal/auth/users', getAuthServiceUrl()), {
     method: 'POST',
     headers: {
+      ...buildInternalHeaders(),
       'content-type': 'application/json',
     },
     body: JSON.stringify(input),
@@ -202,6 +186,14 @@ export async function verifyPendingEmailToken(code) {
   if (!consumed) {
     return { ok: false }
   }
+
+  void publishEventSafely({
+    type: 'registration.email_verified',
+    source: 'registration-service',
+    payload: {
+      email: pending.email,
+    },
+  })
 
   return {
     ok: true,

@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
+import { apiFetch } from '../../lib/api'
+import { buildLoginRedirectPath } from '../../lib/auth/redirect'
 import styles from './dashboard.module.css'
 
 type SessionUser = {
@@ -81,7 +83,7 @@ export function NewsMetricsPage() {
   )
 
   async function loadMetrics(signal?: AbortSignal) {
-    const response = await fetch('/api/news/metrics', { signal })
+    const response = await apiFetch('/api/news/metrics', { signal })
     const payload = (await response.json().catch(() => ({}))) as NewsMetricsResponse
 
     if (!response.ok) {
@@ -97,12 +99,12 @@ export function NewsMetricsPage() {
 
     async function load() {
       try {
-        const sessionResponse = await fetch('/api/auth/me', {
+        const sessionResponse = await apiFetch('/api/auth/me', {
           signal: controller.signal,
         })
 
         if (!sessionResponse.ok) {
-          navigate('/', { replace: true })
+          navigate(buildLoginRedirectPath(), { replace: true })
           return
         }
 

@@ -1,4 +1,5 @@
 import { query } from '../../../lib/db/postgres.js'
+import { decryptSecret, encryptSecret, isEncryptedSecret } from '../../../lib/crypto/secrets.js'
 
 function toEmailConnection(row) {
   return {
@@ -25,7 +26,26 @@ export async function findActiveEmailConnection() {
      limit 1`,
   )
 
-  return result.rows[0] ?? null
+  const row = result.rows[0]
+
+  if (!row) {
+    return null
+  }
+
+  if (row.refresh_token && !isEncryptedSecret(row.refresh_token)) {
+    await query(
+      `update email_connections
+          set refresh_token = $2,
+              updated_at = now()
+        where id = $1`,
+      [row.id, encryptSecret(row.refresh_token)],
+    )
+  }
+
+  return {
+    ...row,
+    refresh_token: decryptSecret(row.refresh_token),
+  }
 }
 
 export async function listEmailConnections() {
@@ -45,7 +65,26 @@ export async function listEmailConnectionsWithTokens() {
       order by priority asc, created_at asc`,
   )
 
-  return result.rows
+  const rows = []
+
+  for (const row of result.rows) {
+    if (row.refresh_token && !isEncryptedSecret(row.refresh_token)) {
+      await query(
+        `update email_connections
+            set refresh_token = $2,
+                updated_at = now()
+          where id = $1`,
+        [row.id, encryptSecret(row.refresh_token)],
+      )
+    }
+
+    rows.push({
+      ...row,
+      refresh_token: decryptSecret(row.refresh_token),
+    })
+  }
+
+  return rows
 }
 
 export async function upsertEmailConnection(input) {
@@ -60,7 +99,7 @@ export async function upsertEmailConnection(input) {
        priority = excluded.priority,
        updated_at = now()
      returning id, provider, email, active, priority, created_at, updated_at`,
-    [input.provider, input.email, input.refreshToken, input.priority],
+    [input.provider, input.email, encryptSecret(input.refreshToken), input.priority],
   )
 
   return toEmailConnection(result.rows[0])

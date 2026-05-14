@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
+import { apiFetch } from '../../lib/api'
 import styles from './verify-email.module.css'
 
 export function VerifyEmailPage() {
@@ -31,7 +32,7 @@ export function VerifyEmailPage() {
 
     async function verifyEmail() {
       try {
-        const response = await fetch(
+        const response = await apiFetch(
           `/api/auth/verify-email?code=${encodeURIComponent(verificationCode)}`,
           {
             signal: controller.signal,
