@@ -11,6 +11,7 @@ const MIN_MARKED_TEXT_RATIO = 0.82
 const AI_REQUEST_TIMEOUT_MS = 45000
 const SUMMARY_CACHE_TTL_MS = 10 * 60 * 1000
 const SUMMARY_CACHE_MAX_ITEMS = 100
+const MIN_CORRECTION_TEXT_RATIO = 0.5
 
 const summaryCache = new Map()
 
@@ -263,6 +264,110 @@ function stripSummaryMarkers(value) {
   return cleanPlainText(value.replace(/\[\[([\s\S]+?)\]\]\(\([^)]+\)\)/g, '$1'))
 }
 
+function normalizeTextForMatch(value) {
+  return String(value ?? '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+function getMatchTokens(value) {
+  return normalizeTextForMatch(value)
+    .split(' ')
+    .filter((token) => token.length > 3)
+}
+
+function getBestArticleShortId(text, articles, fallbackIndex) {
+  const textTokens = new Set(getMatchTokens(text))
+  let bestArticle = null
+  let bestScore = 0
+
+  for (const article of articles) {
+    const shortId = typeof article.shortId === 'string' ? article.shortId.trim() : ''
+
+    if (!shortId) {
+      continue
+    }
+
+    const articleTokens = getMatchTokens(`${article.title ?? ''} ${article.description ?? ''}`)
+    const score = articleTokens.reduce((total, token) => total + (textTokens.has(token) ? 1 : 0), 0)
+
+    if (score > bestScore) {
+      bestScore = score
+      bestArticle = article
+    }
+  }
+
+  if (bestArticle?.shortId) {
+    return bestArticle.shortId.trim()
+  }
+
+  const fallbackArticle = articles[fallbackIndex % articles.length]
+  return typeof fallbackArticle?.shortId === 'string' && fallbackArticle.shortId.trim()
+    ? fallbackArticle.shortId.trim()
+    : ''
+}
+
+function splitParagraphIntoSentences(paragraph) {
+  const matches = paragraph.match(/[^.!?]+(?:[.!?]+|$)/g) ?? [paragraph]
+  return matches.map((sentence) => sentence.trim()).filter(Boolean)
+}
+
+function rebuildMarkedSummaryLocally(value, articles) {
+  const validArticles = articles.filter(
+    (article) => typeof article.shortId === 'string' && article.shortId.trim().length > 0,
+  )
+
+  if (validArticles.length === 0) {
+    return cleanMarkedSummary(value)
+  }
+
+  const plainSummary = stripSummaryMarkers(value)
+  const paragraphs = plainSummary
+    .split(/\n{2,}/)
+    .map((paragraph) => paragraph.trim())
+    .filter(Boolean)
+  let fallbackIndex = 0
+
+  return paragraphs
+    .map((paragraph) =>
+      splitParagraphIntoSentences(paragraph)
+        .map((sentence) => {
+          const shortId = getBestArticleShortId(sentence, validArticles, fallbackIndex)
+          fallbackIndex += 1
+
+          if (!shortId) {
+            return sentence
+          }
+
+          return `[[${sentence}]]((${shortId}))`
+        })
+        .join(' '),
+    )
+    .join('\n\n')
+    .trim()
+}
+
+function ensureValidMarkedSummary(value, articles) {
+  const cleaned = cleanMarkedSummary(value)
+  const ratio = calculateMarkedTextRatio(cleaned)
+
+  if (ratio >= MIN_MARKED_TEXT_RATIO) {
+    return cleaned
+  }
+
+  const rebuilt = rebuildMarkedSummaryLocally(cleaned, articles)
+
+  if (calculateMarkedTextRatio(rebuilt) > ratio) {
+    return rebuilt
+  }
+
+  return cleaned
+}
+
 function calculateMarkedTextRatio(value) {
   const plainLength = stripSummaryMarkers(value).replace(/\s+/g, '').length
   const markedLength = Array.from(value.matchAll(/\[\[([\s\S]+?)\]\]\(\([^)]+\)\)/g)).reduce(
@@ -319,12 +424,20 @@ async function handleNewsSummary(request, response) {
     let provider = aiResult.provider
     let model = aiResult.model
 
-    if (calculateMarkedTextRatio(markedSummary) < MIN_MARKED_TEXT_RATIO) {
-      const corrected = await requestAiCorrection({ articles, markedSummary })
-      markedSummary = cleanMarkedSummary(corrected.content)
-      provider = corrected.provider ?? provider
-      model = corrected.model ?? model
+    if (calculateMarkedTextRatio(markedSummary) < MIN_CORRECTION_TEXT_RATIO) {
+      try {
+        const corrected = await requestAiCorrection({ articles, markedSummary })
+        markedSummary = cleanMarkedSummary(corrected.content)
+        provider = corrected.provider ?? provider
+        model = corrected.model ?? model
+      } catch (error) {
+        console.warn('[news-summary-service] Failed to correct marked summary, using local repair', {
+          message: error instanceof Error ? error.message : 'Unknown error',
+        })
+      }
     }
+
+    markedSummary = ensureValidMarkedSummary(markedSummary, articles)
 
     const segments = parseSummarySegments(markedSummary, articles)
     const summary = stripSummaryMarkers(markedSummary)
