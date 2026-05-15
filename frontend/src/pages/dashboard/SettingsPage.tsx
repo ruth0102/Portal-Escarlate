@@ -82,96 +82,104 @@ export function SettingsPage() {
         {loading ? (
           <p className={styles.copy}>Carregando configurações da conta.</p>
         ) : user ? (
-          <div className={styles.grid}>
-            <article className={styles.card}>
-              <span className={styles.label}>Conta ativa</span>
-              <strong className={styles.value}>{user.email}</strong>
-              <p className={styles.copy}>
-                Esta conta está habilitada para acessar a pesquisa inteligente de notícias,
-                sínteses assistidas por IA e recursos associados ao Portal Escarlate.
-              </p>
-            </article>
-
-            <article className={styles.card}>
-              <span className={styles.label}>Perfil</span>
-              <strong className={styles.value}>
-                {user.role === 'admin' ? 'Administrador' : 'Usuário'}
-              </strong>
-              <p className={styles.copy}>
-                As permissões deste perfil definem quais áreas administrativas e recursos
-                operacionais ficam disponíveis na plataforma.
-              </p>
-            </article>
-
-            <article className={styles.cardWide}>
-              <span className={styles.label}>Aparência</span>
-              <strong className={styles.value}>Tamanho do texto</strong>
-              <p className={styles.copy}>
-                Ajuste a escala das fontes para melhorar a leitura. A preferência fica salva
-                neste navegador para os próximos acessos.
-              </p>
-              <div className={styles.settingsControlRow}>
-                <button
-                  className={styles.fontScaleButton}
-                  type="button"
-                  aria-label="Diminuir tamanho do texto"
-                  disabled={fontScale <= MIN_FONT_SCALE}
-                  onClick={() => setFontScale(decreaseFontScale(fontScale))}
-                >
-                  a
-                </button>
-                <div
-                  className={styles.fontScaleTrack}
-                  aria-label="Escala atual do texto"
-                  role="img"
-                >
-                  {fontScaleSteps.map((step) => (
-                    <span
-                      className={`${styles.fontScaleDot} ${
-                        step <= fontScale ? styles.fontScaleDotActive : ''
-                      }`}
-                      key={step}
-                    />
-                  ))}
-                </div>
-                <button
-                  className={styles.fontScaleButton}
-                  type="button"
-                  aria-label="Aumentar tamanho do texto"
-                  disabled={fontScale >= MAX_FONT_SCALE}
-                  onClick={() => setFontScale(increaseFontScale(fontScale))}
-                >
-                  A
-                </button>
-                <button
-                  className={styles.newsPageButton}
-                  type="button"
-                  onClick={() => setFontScale(resetFontScale())}
-                >
-                  Padrão
-                </button>
-              </div>
-            </article>
-
-            {user.role === 'admin' ? (
-              <article className={styles.cardWide}>
-                <span className={styles.label}>Administração</span>
-                <strong className={styles.value}>Ferramentas da plataforma</strong>
+          <>
+            <div className={styles.grid}>
+              <article className={styles.card}>
+                <span className={styles.label}>Conta ativa</span>
+                <strong className={styles.value}>{user.email}</strong>
                 <p className={styles.copy}>
-                  Gerencie conexões de e-mail para envios automáticos e acompanhe métricas
-                  de pesquisa agregadas por usuário e tema.
+                  Esta conta está habilitada para acessar a pesquisa inteligente de notícias,
+                  sínteses assistidas por IA e recursos associados ao Portal Escarlate.
                 </p>
-                <div className={styles.adminButtonGroup}>
-                  <Link className={styles.adminButton} to="/admin/email-connections">
-                    Conexões
-                  </Link>
-                  <Link className={styles.adminButton} to="/admin/news-metrics">
-                    Métricas
-                  </Link>
+              </article>
+
+              <article className={styles.card}>
+                <span className={styles.label}>Perfil</span>
+                <strong className={styles.value}>
+                  {user.role === 'admin' ? 'Administrador' : 'Usuário'}
+                </strong>
+                <p className={styles.copy}>
+                  As permissões deste perfil definem quais áreas administrativas e recursos
+                  operacionais ficam disponíveis na plataforma.
+                </p>
+              </article>
+
+              <article className={styles.cardWide}>
+                <span className={styles.label}>Aparência</span>
+                <strong className={styles.value}>Tamanho do texto</strong>
+                <p className={styles.copy}>
+                  Ajuste a escala das fontes para melhorar a leitura. A preferência fica salva
+                  neste navegador para os próximos acessos.
+                </p>
+                <div className={styles.settingsControlRow}>
+                  <button
+                    className={styles.fontScaleButton}
+                    type="button"
+                    aria-label="Diminuir tamanho do texto"
+                    disabled={fontScale <= MIN_FONT_SCALE}
+                    onClick={() => setFontScale(decreaseFontScale(fontScale))}
+                  >
+                    a
+                  </button>
+                  <div
+                    className={styles.fontScaleTrack}
+                    aria-label="Escala atual do texto"
+                    role="img"
+                  >
+                    {fontScaleSteps.map((step) => (
+                      <span
+                        className={`${styles.fontScaleDot} ${
+                          step <= fontScale ? styles.fontScaleDotActive : ''
+                        }`}
+                        key={step}
+                      />
+                    ))}
+                  </div>
+                  <button
+                    className={styles.fontScaleButton}
+                    type="button"
+                    aria-label="Aumentar tamanho do texto"
+                    disabled={fontScale >= MAX_FONT_SCALE}
+                    onClick={() => setFontScale(increaseFontScale(fontScale))}
+                  >
+                    A
+                  </button>
+                  <button
+                    className={styles.newsPageButton}
+                    type="button"
+                    onClick={() => setFontScale(resetFontScale())}
+                  >
+                    Padrão
+                  </button>
                 </div>
               </article>
-            ) : null}
-          </div>
+
+              {user.role === 'admin' ? (
+                <article className={styles.cardWide}>
+                  <span className={styles.label}>Administração</span>
+                  <strong className={styles.value}>Ferramentas da plataforma</strong>
+                  <p className={styles.copy}>
+                    Gerencie conexões de e-mail para envios automáticos e acompanhe métricas
+                    de pesquisa agregadas por usuário e tema.
+                  </p>
+                  <div className={styles.adminButtonGroup}>
+                    <Link className={styles.adminButton} to="/admin/email-connections">
+                      Conexões
+                    </Link>
+                    <Link className={styles.adminButton} to="/admin/news-metrics">
+                      Métricas
+                    </Link>
+                  </div>
+                </article>
+              ) : null}
+            </div>
+
+            <div className={styles.settingsFooterActions}>
+              <Link className={styles.actionLink} to="/dashboard">
+                Voltar
+              </Link>
+            </div>
+          </>
         ) : null}
       </section>
     </main>

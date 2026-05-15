@@ -87,7 +87,7 @@ export function DashboardPage() {
 
   return (
     <main className={styles.page}>
-      <section className={styles.panel}>
+      <section className={`${styles.panel} ${styles.dashboardPanel}`}>
         <div className={styles.header}>
           <div>
             <span className={styles.kicker}>Ala reservada</span>

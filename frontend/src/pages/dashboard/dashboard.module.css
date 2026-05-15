@@ -181,6 +181,10 @@
   display: none;
 }
 
+.settingsFooterActions {
+  display: none;
+}
+
 .adminButtonGroup {
   margin-top: 18px;
 }
@@ -995,7 +999,7 @@
   }
 
   .header > .headerActions {
-    display: none;
+    display: grid;
   }
 
   .mobileDashboardActions {
@@ -1004,6 +1008,14 @@
     gap: 9px;
     width: 100%;
     margin-top: 18px;
+  }
+
+  .settingsFooterActions {
+    display: none;
+  }
+
+  .dashboardPanel .header > .headerActions {
+    display: none;
   }
 
   .headerActions,
@@ -1064,8 +1076,23 @@
   }
 
   .value {
+    margin-bottom: 0;
     font-size: 1.22rem;
     line-height: 1.2;
+  }
+
+  .dashboardPanel .cardWide > .copy,
+  .card > .copy,
+  .cardWide > .copy {
+    display: none;
+  }
+
+  .cardWide:has(.settingsControlRow) > .copy,
+  .cardWide:has(.adminButtonGroup) > .copy {
+    display: block;
+    margin-top: 8px;
+    font-size: 0.92rem;
+    line-height: 1.5;
   }
 
   .copy,
@@ -1108,6 +1135,14 @@
     min-height: 48px;
     padding: 0 12px;
     border-radius: 12px;
+    border-color: rgba(var(--brand-primary-rgb), 0.34);
+    background:
+      linear-gradient(180deg, rgba(var(--brand-primary-rgb), 0.08), rgba(255, 255, 255, 0.012)),
+      rgba(var(--surface-base-rgb), 0.72);
+    box-shadow:
+      inset 0 0 24px rgba(var(--brand-primary-rgb), 0.055),
+      0 0 0 1px rgba(var(--brand-primary-rgb), 0.08),
+      0 14px 30px rgba(var(--shadow-rgb), 0.18);
   }
 
   .newsSuggestions {
