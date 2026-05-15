@@ -10,8 +10,8 @@ const processes = [
   },
   {
     name: 'frontend',
-    command: 'npm',
-    args: ['run', 'preview', '--prefix', 'frontend', '--', '--host', '0.0.0.0'],
+    command: process.execPath,
+    args: ['scripts/serve-frontend.js'],
   },
 ]
 

@@ -20,7 +20,7 @@ export function createSessionToken(user) {
   const now = Math.floor(Date.now() / 1000)
   const header = base64UrlJson({ alg: 'HS256', typ: 'JWT' })
   const payload = base64UrlJson({
-    sub: user.id,
+    sub: String(user.id),
     email: user.email,
     role: user.role,
     jti: randomUUID(),
@@ -71,7 +71,7 @@ export function verifySessionToken(token) {
   }
 
   return {
-    id: typeof decoded.sub === 'string' ? decoded.sub : '',
+    id: decoded.sub == null ? '' : String(decoded.sub),
     email: typeof decoded.email === 'string' ? decoded.email : '',
     role: typeof decoded.role === 'string' ? decoded.role : 'user',
   }
@@ -100,4 +100,23 @@ export function buildExpiredSessionCookie() {
   const secure = process.env.NODE_ENV === 'production' ? '; Secure' : ''
 
   return `${SESSION_COOKIE_NAME}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0${secure}`
+}
+
+export function buildExpiredSessionCookies() {
+  const secure = process.env.NODE_ENV === 'production' ? '; Secure' : ''
+  const baseCookie = `${SESSION_COOKIE_NAME}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0${secure}`
+  const cookies = [baseCookie]
+
+  try {
+    const hostname = new URL(process.env.APP_URL ?? '').hostname
+
+    if (hostname && hostname !== 'localhost' && !/^\d+\.\d+\.\d+\.\d+$/.test(hostname)) {
+      cookies.push(`${baseCookie}; Domain=${hostname}`)
+      cookies.push(`${baseCookie}; Domain=.${hostname}`)
+    }
+  } catch {
+    // APP_URL is optional for clearing the host-only cookie.
+  }
+
+  return cookies
 }

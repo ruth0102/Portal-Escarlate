@@ -12,14 +12,17 @@ import {
 } from '../../lib/auth/user-repo.js'
 import { flattenFieldErrors, loginSchema } from '../../lib/auth/validation.js'
 import {
-  buildExpiredSessionCookie,
+  buildExpiredSessionCookies,
   buildSessionCookie,
   createSessionToken,
+  getSessionCookieName,
+  verifySessionToken,
 } from '../../lib/auth/session.js'
 import { json, noContent, readJson } from '../../shared/http/json.js'
 import { getSessionUser } from '../../shared/http/session-user.js'
 import { validateInternalRequest } from '../../shared/http/security.js'
 import { getClientIp } from '../../shared/http/client-ip.js'
+import { getCookieValues } from '../../shared/http/cookies.js'
 
 const port = Number.parseInt(process.env.AUTH_SERVICE_PORT ?? '3001', 10)
 const hostname = process.env.HOST ?? '127.0.0.1'
@@ -106,7 +109,9 @@ async function handleLogin(request, response) {
       },
     })
 
-    json(response, 200, { user: sessionUser }, { 'set-cookie': buildSessionCookie(token) })
+    json(response, 200, { user: sessionUser }, {
+      'set-cookie': [...buildExpiredSessionCookies(), buildSessionCookie(token)],
+    })
   } catch (error) {
     console.error('[auth-service] Login failed', error)
     json(response, 500, { message: 'Nao foi possivel autenticar agora.' })
@@ -180,6 +185,34 @@ async function handleInternalCreateUser(request, response) {
   }
 }
 
+async function handleCurrentUser(request, response) {
+  const sessionTokens = getCookieValues(request, getSessionCookieName())
+  const sessionUsers = sessionTokens
+    .map((token) => verifySessionToken(token))
+    .filter(Boolean)
+
+  if (sessionUsers.length === 0) {
+    json(response, 401, { message: 'Sessao invalida.' }, { 'set-cookie': buildExpiredSessionCookies() })
+    return
+  }
+
+  try {
+    for (const user of sessionUsers) {
+      const storedUser = await findUserByEmail(user.email)
+
+      if (storedUser && String(storedUser.id) === String(user.id)) {
+        json(response, 200, { user: toSessionUser(storedUser) })
+        return
+      }
+    }
+
+    json(response, 401, { message: 'Sessao invalida.' }, { 'set-cookie': buildExpiredSessionCookies() })
+  } catch (error) {
+    console.error('[auth-service] Failed to validate current session', error)
+    json(response, 500, { message: 'Nao foi possivel validar a sessao.' })
+  }
+}
+
 async function route(request, response) {
   const url = new URL(request.url ?? '/', `http://${request.headers.host ?? `${hostname}:${port}`}`)
 
@@ -231,19 +264,12 @@ async function route(request, response) {
       })
     }
 
-    json(response, 200, { message: 'Sessao encerrada.' }, { 'set-cookie': buildExpiredSessionCookie() })
+    json(response, 200, { message: 'Sessao encerrada.' }, { 'set-cookie': buildExpiredSessionCookies() })
     return
   }
 
   if (request.method === 'GET' && url.pathname === '/api/auth/me') {
-    const user = getSessionUser(request)
-
-    if (!user) {
-      json(response, 401, { message: 'Sessao invalida.' })
-      return
-    }
-
-    json(response, 200, { user })
+    await handleCurrentUser(request, response)
     return
   }
 

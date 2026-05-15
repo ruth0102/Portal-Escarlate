@@ -122,8 +122,27 @@ async function proxy(request, response, service, url) {
     const responseHeaders = {}
 
     upstream.headers.forEach((value, key) => {
+      if (key.toLowerCase() === 'set-cookie') {
+        return
+      }
+
       responseHeaders[key] = value
     })
+
+    const setCookies =
+      typeof upstream.headers.getSetCookie === 'function'
+        ? upstream.headers.getSetCookie()
+        : []
+
+    if (setCookies.length > 0) {
+      responseHeaders['set-cookie'] = setCookies
+    } else {
+      const setCookie = upstream.headers.get('set-cookie')
+
+      if (setCookie) {
+        responseHeaders['set-cookie'] = setCookie
+      }
+    }
 
     Object.assign(responseHeaders, corsHeaders)
 

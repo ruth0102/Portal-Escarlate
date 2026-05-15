@@ -20,7 +20,7 @@ function AuthEntryPage({ initialMode, loginNotice }: { initialMode?: 'login'; lo
   useEffect(() => {
     const controller = new AbortController()
 
-    async function loadSession() {
+    async function checkExistingSession() {
       try {
         const response = await apiFetch('/api/auth/me', {
           signal: controller.signal,
@@ -32,7 +32,7 @@ function AuthEntryPage({ initialMode, loginNotice }: { initialMode?: 'login'; lo
           return
         }
       } catch {
-        // fall through and render auth portal
+        // Sem sessao valida: exibe o login normalmente.
       } finally {
         if (!controller.signal.aborted) {
           setCheckingSession(false)
@@ -40,7 +40,7 @@ function AuthEntryPage({ initialMode, loginNotice }: { initialMode?: 'login'; lo
       }
     }
 
-    loadSession()
+    checkExistingSession()
 
     return () => controller.abort()
   }, [location.search, navigate])

@@ -15,6 +15,8 @@ export function DashboardPage() {
   const navigate = useNavigate()
   const [user, setUser] = useState<SessionUser | null>(null)
   const [loading, setLoading] = useState(true)
+  const [logoutError, setLogoutError] = useState('')
+  const [logoutLoading, setLogoutLoading] = useState(false)
 
   useEffect(() => {
     const controller = new AbortController()
@@ -49,9 +51,23 @@ export function DashboardPage() {
   }, [navigate])
 
   async function handleLogout() {
-    await apiFetch('/api/auth/logout', { method: 'POST' }).catch(() => undefined)
-    clearNewsSearchStorage()
-    navigate('/', { replace: true })
+    setLogoutError('')
+    setLogoutLoading(true)
+
+    try {
+      const response = await apiFetch('/api/auth/logout', { method: 'POST' })
+
+      if (!response.ok) {
+        throw new Error('Falha ao encerrar a sessão.')
+      }
+
+      clearNewsSearchStorage()
+      navigate('/login', { replace: true })
+    } catch {
+      setLogoutError('Não foi possível sair agora. Tente novamente.')
+    } finally {
+      setLogoutLoading(false)
+    }
   }
 
   if (loading) {
@@ -65,6 +81,10 @@ export function DashboardPage() {
     )
   }
 
+  if (!user) {
+    return null
+  }
+
   return (
     <main className={styles.page}>
       <section className={styles.panel}>
@@ -74,10 +94,17 @@ export function DashboardPage() {
             <h1 className={styles.title}>Portal Escarlate</h1>
           </div>
 
-          <button className={styles.action} type="button" onClick={handleLogout}>
-            Sair
+          <button
+            className={styles.action}
+            type="button"
+            onClick={handleLogout}
+            disabled={logoutLoading}
+          >
+            {logoutLoading ? 'Saindo...' : 'Sair'}
           </button>
         </div>
+
+        {logoutError ? <p className={styles.adminError}>{logoutError}</p> : null}
 
         <div className={styles.grid}>
           <article className={styles.card}>

@@ -89,7 +89,22 @@ export function LoginForm({ active, initialNotice }: LoginFormProps) {
 
           setMessage({
             tone: 'success',
-            text: 'Acesso confirmado. Redirecionando para a ala reservada...',
+            text: 'Acesso confirmado. Validando sessão...',
+          })
+
+          const sessionResponse = await apiFetch('/api/auth/me')
+
+          if (!sessionResponse.ok) {
+            setMessage({
+              tone: 'error',
+              text: 'Login aceito, mas a sessão não foi persistida pelo navegador. Recarregue a página e tente novamente.',
+            })
+            return
+          }
+
+          setMessage({
+            tone: 'success',
+            text: 'Sessão validada. Redirecionando para a ala reservada...',
           })
           navigate(redirectTo, { replace: true })
         } catch {

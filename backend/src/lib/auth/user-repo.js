@@ -63,7 +63,7 @@ export async function createUser(input) {
 
 export function toSessionUser(user) {
   return {
-    id: user.id,
+    id: String(user.id),
     email: normalizeEmail(user.email),
     role: typeof user.role === 'string' ? user.role : 'user',
   }

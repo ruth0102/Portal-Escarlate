@@ -9,7 +9,7 @@
     "dev:backend": "npm run dev --prefix backend",
     "build": "node scripts/build.js",
     "preview": "npm run preview --prefix frontend",
-    "start": "node scripts/start.js"
+    "start": "node --env-file=.env scripts/start.js"
   },
   "workspaces": [
     "frontend",
