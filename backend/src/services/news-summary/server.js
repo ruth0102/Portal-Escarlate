@@ -1,8 +1,8 @@
 import http from 'node:http'
 import { createHash } from 'node:crypto'
+import { requestService } from '../../lib/events/service-request-client.js'
 import { json, noContent, readJson } from '../../shared/http/json.js'
 import { getSessionUser } from '../../shared/http/session-user.js'
-import { buildInternalHeaders } from '../../shared/http/security.js'
 
 const port = Number.parseInt(process.env.NEWS_SUMMARY_SERVICE_PORT ?? '3006', 10)
 const hostname = process.env.HOST ?? '127.0.0.1'
@@ -14,17 +14,6 @@ const SUMMARY_CACHE_MAX_ITEMS = 100
 const MIN_CORRECTION_TEXT_RATIO = 0.5
 
 const summaryCache = new Map()
-
-function getAiServiceUrl() {
-  if (process.env.AI_SERVICE_URL) {
-    return process.env.AI_SERVICE_URL.replace(/\/+$/g, '')
-  }
-
-  const host = process.env.AI_SERVICE_HOST ?? process.env.HOST ?? '127.0.0.1'
-  const servicePort = process.env.AI_SERVICE_PORT ?? '3004'
-
-  return `http://${host}:${servicePort}`
-}
 
 function sanitizeArticle(article, index) {
   const shortId =
@@ -142,10 +131,9 @@ function cleanPlainText(value) {
 }
 
 async function requestAiSummary(input) {
-  const response = await fetch(new URL('/internal/ai/chat', getAiServiceUrl()), {
+  const response = await requestService('ai', '/internal/ai/chat', {
     method: 'POST',
     headers: {
-      ...buildInternalHeaders(),
       'content-type': 'application/json',
     },
     body: JSON.stringify({
@@ -162,6 +150,7 @@ async function requestAiSummary(input) {
       ],
       temperature: 0.3,
     }),
+    source: 'news-summary-service',
     signal: AbortSignal.timeout(AI_REQUEST_TIMEOUT_MS),
   })
 
@@ -179,10 +168,9 @@ async function requestAiSummary(input) {
 }
 
 async function requestAiCorrection(input) {
-  const response = await fetch(new URL('/internal/ai/chat', getAiServiceUrl()), {
+  const response = await requestService('ai', '/internal/ai/chat', {
     method: 'POST',
     headers: {
-      ...buildInternalHeaders(),
       'content-type': 'application/json',
     },
     body: JSON.stringify({
@@ -210,6 +198,7 @@ async function requestAiCorrection(input) {
       ],
       temperature: 0.2,
     }),
+    source: 'news-summary-service',
     signal: AbortSignal.timeout(AI_REQUEST_TIMEOUT_MS),
   })
 

@@ -6,6 +6,7 @@ import { getSubscribersForEvent } from './subscribers.js'
 
 const port = Number.parseInt(process.env.EVENT_SERVICE_PORT ?? '3007', 10)
 const hostname = process.env.HOST ?? '127.0.0.1'
+const SERVICE_REQUEST_TIMEOUT_MS = 70000
 const MAX_ATTEMPTS = 3
 const BASE_RETRY_DELAY_MS = 1000
 const MAX_EVENT_LOG_SIZE = 500
@@ -21,6 +22,46 @@ const SENSITIVE_PAYLOAD_FIELDS = new Set([
 const eventLog = []
 const queue = []
 let dispatching = false
+
+function getServiceTarget(urlEnvName, hostEnvName, portEnvName, fallbackPort) {
+  const serviceUrl = process.env[urlEnvName]?.trim()
+
+  if (serviceUrl) {
+    return serviceUrl.replace(/\/+$/g, '')
+  }
+
+  const host = process.env[hostEnvName] ?? process.env.HOST ?? '127.0.0.1'
+  const servicePort = process.env[portEnvName] ?? fallbackPort
+
+  return `http://${host}:${servicePort}`
+}
+
+function getServiceTargets() {
+  return {
+    auth: getServiceTarget('AUTH_SERVICE_URL', 'AUTH_SERVICE_HOST', 'AUTH_SERVICE_PORT', '3001'),
+    registration: getServiceTarget(
+      'REGISTRATION_SERVICE_URL',
+      'REGISTRATION_SERVICE_HOST',
+      'REGISTRATION_SERVICE_PORT',
+      '3003',
+    ),
+    email: getServiceTarget('EMAIL_SERVICE_URL', 'EMAIL_SERVICE_HOST', 'EMAIL_SERVICE_PORT', '3005'),
+    news: getServiceTarget('NEWS_SERVICE_URL', 'NEWS_SERVICE_HOST', 'NEWS_SERVICE_PORT', '3002'),
+    'article-summary': getServiceTarget(
+      'ARTICLE_SUMMARY_SERVICE_URL',
+      'ARTICLE_SUMMARY_SERVICE_HOST',
+      'ARTICLE_SUMMARY_SERVICE_PORT',
+      '3008',
+    ),
+    ai: getServiceTarget('AI_SERVICE_URL', 'AI_SERVICE_HOST', 'AI_SERVICE_PORT', '3004'),
+    'news-summary': getServiceTarget(
+      'NEWS_SUMMARY_SERVICE_URL',
+      'NEWS_SUMMARY_SERVICE_HOST',
+      'NEWS_SUMMARY_SERVICE_PORT',
+      '3006',
+    ),
+  }
+}
 
 function validateEventPayload(payload) {
   if (!payload || typeof payload !== 'object') {
@@ -55,13 +96,16 @@ function createEvent(payload) {
   }
 }
 
-function enqueue(event) {
+function appendLog(event) {
   eventLog.push(event)
 
   if (eventLog.length > MAX_EVENT_LOG_SIZE) {
     eventLog.shift()
   }
+}
 
+function enqueue(event) {
+  appendLog(event)
   queue.push(event)
   scheduleDispatch()
 }
@@ -207,6 +251,149 @@ async function handlePublishEvent(request, response) {
   })
 }
 
+function validateServiceRequestPayload(payload) {
+  if (!payload || typeof payload !== 'object') {
+    return 'Requisicao ausente.'
+  }
+
+  if (typeof payload.service !== 'string' || !payload.service.trim()) {
+    return 'Servico de destino ausente.'
+  }
+
+  if (typeof payload.path !== 'string' || !payload.path.startsWith('/')) {
+    return 'Caminho da requisicao invalido.'
+  }
+
+  if (typeof payload.method !== 'string' || !payload.method.trim()) {
+    return 'Metodo da requisicao ausente.'
+  }
+
+  if (payload.headers && (typeof payload.headers !== 'object' || Array.isArray(payload.headers))) {
+    return 'Headers da requisicao devem ser um objeto.'
+  }
+
+  if (payload.bodyBase64 && typeof payload.bodyBase64 !== 'string') {
+    return 'Corpo da requisicao deve estar em base64.'
+  }
+
+  return null
+}
+
+function sanitizeRequestHeaders(headers) {
+  const sanitized = { ...(headers ?? {}) }
+
+  delete sanitized.host
+  delete sanitized.connection
+  delete sanitized['content-length']
+  delete sanitized['transfer-encoding']
+
+  return sanitized
+}
+
+async function handleServiceRequest(request, response) {
+  if (!validateInternalRequest(request, response, json)) {
+    return
+  }
+
+  let payload
+
+  try {
+    payload = await readJson(request)
+  } catch (error) {
+    json(response, error?.status === 413 ? 413 : 400, {
+      message:
+        error?.status === 413
+          ? 'Requisicao muito grande.'
+          : 'Nao foi possivel ler os dados da requisicao.',
+    })
+    return
+  }
+
+  const validationError = validateServiceRequestPayload(payload)
+
+  if (validationError) {
+    json(response, 400, { message: validationError })
+    return
+  }
+
+  const serviceName = payload.service.trim()
+  const target = getServiceTargets()[serviceName]
+  const event = {
+    id: randomUUID(),
+    type: 'service.request',
+    source: payload.source || 'gateway',
+    payload: {
+      service: serviceName,
+      method: payload.method,
+      path: payload.path,
+    },
+    status: 'delivering',
+    attempts: 1,
+    createdAt: new Date().toISOString(),
+    lastError: '',
+  }
+
+  appendLog(event)
+
+  if (!target) {
+    event.status = 'failed'
+    event.lastError = `Servico ${serviceName} nao registrado no barramento.`
+    event.failedAt = new Date().toISOString()
+    json(response, 404, { message: event.lastError })
+    return
+  }
+
+  try {
+    const upstream = await fetch(new URL(payload.path, target), {
+      method: payload.method,
+      headers: {
+        ...sanitizeRequestHeaders(payload.headers),
+        ...buildInternalHeaders(),
+      },
+      body:
+        payload.method === 'GET' || payload.method === 'HEAD' || !payload.bodyBase64
+          ? undefined
+          : Buffer.from(payload.bodyBase64, 'base64'),
+      redirect: 'manual',
+      signal: AbortSignal.timeout(SERVICE_REQUEST_TIMEOUT_MS),
+    })
+    const responseBody = Buffer.from(await upstream.arrayBuffer())
+    const responseHeaders = {}
+
+    upstream.headers.forEach((value, key) => {
+      responseHeaders[key] = value
+    })
+
+    if (typeof upstream.headers.getSetCookie === 'function') {
+      const setCookies = upstream.headers.getSetCookie()
+
+      if (setCookies.length > 0) {
+        responseHeaders['set-cookie'] = setCookies
+      }
+    }
+
+    event.status = 'delivered'
+    event.deliveredAt = new Date().toISOString()
+
+    json(response, 200, {
+      status: upstream.status,
+      headers: responseHeaders,
+      bodyBase64: responseBody.toString('base64'),
+    })
+  } catch (error) {
+    event.status = 'failed'
+    event.failedAt = new Date().toISOString()
+    event.lastError = error instanceof Error ? error.message : 'Erro desconhecido.'
+    console.error('[event-service] Service request failed', {
+      id: event.id,
+      service: serviceName,
+      path: payload.path,
+      message: event.lastError,
+    })
+    json(response, 502, { message: `Servico ${serviceName} indisponivel.` })
+  }
+}
+
 async function route(request, response) {
   const url = new URL(request.url ?? '/', `http://${request.headers.host ?? `${hostname}:${port}`}`)
 
@@ -227,6 +414,11 @@ async function route(request, response) {
 
   if (request.method === 'POST' && url.pathname === '/internal/events') {
     await handlePublishEvent(request, response)
+    return
+  }
+
+  if (request.method === 'POST' && url.pathname === '/internal/service-request') {
+    await handleServiceRequest(request, response)
     return
   }
 

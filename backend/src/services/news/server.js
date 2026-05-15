@@ -1,39 +1,20 @@
 import http from 'node:http'
-import { lookup } from 'node:dns/promises'
-import net from 'node:net'
-import { publishEventSafely } from '../../lib/events/event-client.js'
-import {
-  findArticleSummaryById,
-  findArticleSummaryByNormalizedUrl,
-  upsertArticleSummary,
-} from '../../lib/news/article-summary-repo.js'
 import { listActiveNewsApiKeys, markNewsApiKeyFailure } from '../../lib/news/api-key-repo.js'
 import {
   createNewsSearchHistory,
-  listCachedSearchThemes,
   listNewsSearchMetricRows,
   listRecentNewsSearchQueries,
-  upsertSearchThemes,
 } from '../../lib/news/search-history-repo.js'
 import { json, noContent, readJson } from '../../shared/http/json.js'
 import { getSessionUser } from '../../shared/http/session-user.js'
-import { buildInternalHeaders } from '../../shared/http/security.js'
 
 const port = Number.parseInt(process.env.NEWS_SERVICE_PORT ?? '3002', 10)
 const hostname = process.env.HOST ?? '127.0.0.1'
 const NEWS_API_URL = 'https://newsapi.org/v2/everything'
 const PAGE_SIZE = 20
-const NEWS_API_TIMEOUT_MS = 10000
 const ARTICLE_FETCH_TIMEOUT_MS = 7000
-const AI_REQUEST_TIMEOUT_MS = 45000
 const MAX_ARTICLE_HTML_LENGTH = 1_500_000
 const MAX_ARTICLE_TEXT_LENGTH = 12_000
-const FAILED_NEWS_API_KEY_COOLDOWN_MS = 5 * 60 * 1000
-const AI_UNAVAILABLE_MESSAGE = 'IA invalida no momento.'
-
-let newsApiKeysCache = null
-let newsApiKeysCachePromise = null
-const failedNewsApiKeys = new Map()
 
 function sanitizeQuery(value) {
   if (typeof value !== 'string') {
@@ -76,123 +57,58 @@ function extractNewsApiError(payload, response) {
   return response.statusText || `Erro externo ${response.status}`
 }
 
-function isNewsApiKeyCoolingDown(apiKeyId) {
-  const failedAt = failedNewsApiKeys.get(apiKeyId)
-
-  if (!failedAt) {
-    return false
-  }
-
-  if (Date.now() - failedAt > FAILED_NEWS_API_KEY_COOLDOWN_MS) {
-    failedNewsApiKeys.delete(apiKeyId)
-    return false
-  }
-
-  return true
-}
-
-async function getCachedNewsApiKeys({ forceRefresh = false } = {}) {
-  if (newsApiKeysCache && !forceRefresh) {
-    return newsApiKeysCache
-  }
-
-  if (!newsApiKeysCachePromise) {
-    newsApiKeysCachePromise = listActiveNewsApiKeys()
-      .then((apiKeys) => {
-        newsApiKeysCache = apiKeys
-        return apiKeys
-      })
-      .finally(() => {
-        newsApiKeysCachePromise = null
-      })
-  }
-
-  return newsApiKeysCachePromise
-}
-
 async function fetchNewsApiJsonWithFallback(url) {
-  let apiKeys = await getCachedNewsApiKeys()
+  const apiKeys = await listActiveNewsApiKeys()
+
+  if (apiKeys.length === 0) {
+    throw new Error('Nenhuma chave ativa da NewsAPI cadastrada no banco de dados.')
+  }
+
   let lastError
-  let refreshedAfterFailure = false
 
-  while (true) {
-    if (apiKeys.length === 0) {
-      throw new Error('Nenhuma chave ativa da NewsAPI cadastrada no banco de dados.')
-    }
+  for (const apiKey of apiKeys) {
+    try {
+      const responseFromApi = await fetch(url.toString(), {
+        method: 'GET',
+        headers: {
+          'X-Api-Key': apiKey.apiKey,
+        },
+        cache: 'no-store',
+      })
+      const data = await responseFromApi.json().catch(() => ({}))
 
-    let refreshedDuringLoop = false
-
-    for (const apiKey of apiKeys) {
-      if (isNewsApiKeyCoolingDown(apiKey.id)) {
-        continue
-      }
-
-      try {
-        const responseFromApi = await fetch(url.toString(), {
-          method: 'GET',
-          headers: {
-            'X-Api-Key': apiKey.apiKey,
-          },
-          cache: 'no-store',
-          signal: AbortSignal.timeout(NEWS_API_TIMEOUT_MS),
-        })
-        const data = await responseFromApi.json().catch(() => ({}))
-
-        if (!responseFromApi.ok) {
-          const message = extractNewsApiError(data, responseFromApi)
-          lastError = new Error(`NewsAPI falhou com a chave ${apiKey.provider || apiKey.id}: ${message}`)
-          failedNewsApiKeys.set(apiKey.id, Date.now())
-
-          await markNewsApiKeyFailure({
-            id: apiKey.id,
-            error: message,
-          })
-
-          console.warn('[news-service] NewsAPI key failed, trying next fallback when available', {
-            id: apiKey.id,
-            provider: apiKey.provider,
-            status: responseFromApi.status,
-            message,
-          })
-
-          if (!refreshedAfterFailure) {
-            apiKeys = await getCachedNewsApiKeys({ forceRefresh: true })
-            refreshedAfterFailure = true
-            refreshedDuringLoop = true
-            break
-          }
-
-          continue
-        }
-
-        failedNewsApiKeys.delete(apiKey.id)
-        return data
-      } catch (error) {
-        lastError = error
-        failedNewsApiKeys.set(apiKey.id, Date.now())
+      if (!responseFromApi.ok) {
+        const message = extractNewsApiError(data, responseFromApi)
+        lastError = new Error(`NewsAPI falhou com a chave ${apiKey.label || apiKey.id}: ${message}`)
 
         await markNewsApiKeyFailure({
           id: apiKey.id,
-          error: error instanceof Error ? error.message : 'Erro desconhecido ao consultar NewsAPI.',
-        }).catch(() => undefined)
-
-        console.warn('[news-service] NewsAPI key request failed, trying next fallback when available', {
-          id: apiKey.id,
-          provider: apiKey.provider,
-          message: error instanceof Error ? error.message : 'Unknown error',
+          error: message,
         })
 
-        if (!refreshedAfterFailure) {
-          apiKeys = await getCachedNewsApiKeys({ forceRefresh: true })
-          refreshedAfterFailure = true
-          refreshedDuringLoop = true
-          break
-        }
+        console.warn('[news-service] NewsAPI key failed, trying next fallback when available', {
+          id: apiKey.id,
+          label: apiKey.label,
+          status: responseFromApi.status,
+          message,
+        })
+        continue
       }
-    }
 
-    if (!refreshedDuringLoop) {
-      break
+      return data
+    } catch (error) {
+      lastError = error
+
+      await markNewsApiKeyFailure({
+        id: apiKey.id,
+        error: error instanceof Error ? error.message : 'Erro desconhecido ao consultar NewsAPI.',
+      }).catch(() => undefined)
+
+      console.warn('[news-service] NewsAPI key request failed, trying next fallback when available', {
+        id: apiKey.id,
+        label: apiKey.label,
+        message: error instanceof Error ? error.message : 'Unknown error',
+      })
     }
   }
 
@@ -257,17 +173,9 @@ async function classifySearchThemes(queries) {
     return new Map()
   }
 
-  const cachedThemes = await listCachedSearchThemes(queries)
-  const missingQueries = queries.filter((item) => !cachedThemes.has(item.trim().toLowerCase()))
-
-  if (missingQueries.length === 0) {
-    return cachedThemes
-  }
-
   const response = await fetch(new URL('/internal/ai/chat', getAiServiceUrl()), {
     method: 'POST',
     headers: {
-      ...buildInternalHeaders(),
       'content-type': 'application/json',
     },
     body: JSON.stringify({
@@ -279,12 +187,11 @@ async function classifySearchThemes(queries) {
         },
         {
           role: 'user',
-          content: buildThemePrompt(missingQueries),
+          content: buildThemePrompt(queries),
         },
       ],
       temperature: 0,
     }),
-    signal: AbortSignal.timeout(AI_REQUEST_TIMEOUT_MS),
   })
 
   const payload = await response.json().catch(() => null)
@@ -295,7 +202,7 @@ async function classifySearchThemes(queries) {
 
   const content = typeof payload?.content === 'string' ? stripJsonFence(payload.content) : ''
   const parsed = JSON.parse(content)
-  const generatedThemes = new Map()
+  const themeByQuery = new Map()
 
   if (!Array.isArray(parsed)) {
     throw new Error('A IA retornou metricas em formato invalido.')
@@ -303,21 +210,11 @@ async function classifySearchThemes(queries) {
 
   for (const item of parsed) {
     if (typeof item?.query === 'string') {
-      generatedThemes.set(item.query.trim().toLowerCase(), normalizeTheme(item.theme))
+      themeByQuery.set(item.query.trim().toLowerCase(), normalizeTheme(item.theme))
     }
   }
 
-  for (const query of missingQueries) {
-    const queryKey = query.trim().toLowerCase()
-
-    if (!generatedThemes.has(queryKey)) {
-      generatedThemes.set(queryKey, normalizeTheme(query))
-    }
-  }
-
-  await upsertSearchThemes(generatedThemes)
-
-  return new Map([...cachedThemes, ...generatedThemes])
+  return themeByQuery
 }
 
 function buildMetrics(rows, themeByQuery) {
@@ -394,13 +291,8 @@ async function handleNewsSearch(request, response) {
 
   try {
     payload = await readJson(request)
-  } catch (error) {
-    json(response, error?.status === 413 ? 413 : 400, {
-      message:
-        error?.status === 413
-          ? 'Dados da busca muito grandes.'
-          : 'Nao foi possivel ler os dados da busca.',
-    })
+  } catch {
+    json(response, 400, { message: 'Nao foi possivel ler os dados da busca.' })
     return
   }
 
@@ -417,7 +309,7 @@ async function handleNewsSearch(request, response) {
   url.searchParams.set('q', query)
   url.searchParams.set('language', 'pt')
   url.searchParams.set('sortBy', 'publishedAt')
-  url.searchParams.set('pageSize', String(PAGE_SIZE))
+  url.searchParams.set('pageSize', String(PAGE_SIZE * 2))
   url.searchParams.set('page', String(page))
 
   try {
@@ -427,12 +319,12 @@ async function handleNewsSearch(request, response) {
         title: article.title ?? 'Sem titulo',
         description: article.description ?? '',
         url: article.url ?? '',
-        urlToImage: article.urlToImage ?? '',
         source: article.source?.name ?? 'Fonte nao informada',
         publishedAt: article.publishedAt ?? '',
         author: article.author ?? 'Autor desconhecido',
       })) ?? []
-    const filteredArticles = articles.filter((article) => article.url.length > 0)
+    const validArticles = articles.filter((article) => article.url.length > 0)
+    const filteredArticles = validArticles.slice(0, PAGE_SIZE)
     const totalResults = typeof data.totalResults === 'number' ? data.totalResults : 0
     const totalPages = Math.max(1, Math.ceil(totalResults / PAGE_SIZE))
 
@@ -441,17 +333,6 @@ async function handleNewsSearch(request, response) {
         userEmail: sessionUser.email,
         query,
         totalResults,
-      })
-      void publishEventSafely({
-        type: 'news.search_performed',
-        source: 'news-service',
-        payload: {
-          userEmail: sessionUser.email,
-          query,
-          totalResults,
-          page,
-          pageSize: PAGE_SIZE,
-        },
       })
     }
 
@@ -496,12 +377,6 @@ function normalizeUrl(value) {
     .replace(/\/+$/, '')
 }
 
-function isUuid(value) {
-  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
-    String(value ?? ''),
-  )
-}
-
 function isHttpUrl(value) {
   try {
     const url = new URL(value)
@@ -509,63 +384,6 @@ function isHttpUrl(value) {
   } catch {
     return false
   }
-}
-
-function isPrivateIp(ip) {
-  if (net.isIPv4(ip)) {
-    const parts = ip.split('.').map((part) => Number.parseInt(part, 10))
-    const [a, b] = parts
-
-    return (
-      a === 10 ||
-      a === 127 ||
-      a === 0 ||
-      (a === 169 && b === 254) ||
-      (a === 172 && b >= 16 && b <= 31) ||
-      (a === 192 && b === 168) ||
-      (a >= 224 && a <= 239)
-    )
-  }
-
-  if (net.isIPv6(ip)) {
-    const normalized = ip.toLowerCase()
-
-    if (normalized.startsWith('::ffff:')) {
-      return isPrivateIp(normalized.slice('::ffff:'.length))
-    }
-
-    return (
-      normalized === '::1' ||
-      normalized === '::' ||
-      normalized.startsWith('fc') ||
-      normalized.startsWith('fd') ||
-      normalized.startsWith('fe80:')
-    )
-  }
-
-  return true
-}
-
-async function assertPublicHttpUrl(value) {
-  const parsed = new URL(value)
-
-  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
-    throw new Error('URL da noticia deve usar HTTP ou HTTPS.')
-  }
-
-  const hostname = parsed.hostname.toLowerCase()
-
-  if (hostname === 'localhost' || hostname.endsWith('.localhost')) {
-    throw new Error('URL local nao permitida para extracao de noticia.')
-  }
-
-  const addresses = await lookup(hostname, { all: true, verbatim: true })
-
-  if (addresses.length === 0 || addresses.some((entry) => isPrivateIp(entry.address))) {
-    throw new Error('URL da noticia aponta para endereco privado ou invalido.')
-  }
-
-  return parsed
 }
 
 function decodeHtmlEntities(value) {
@@ -651,8 +469,6 @@ async function fetchArticleFromUrl(url) {
     return null
   }
 
-  await assertPublicHttpUrl(url)
-
   const pageResponse = await fetch(url, {
     method: 'GET',
     headers: {
@@ -660,13 +476,9 @@ async function fetchArticleFromUrl(url) {
       'User-Agent':
         'Mozilla/5.0 (compatible; PortalEscarlateBot/1.0; +https://portal-escarlate.local)',
     },
-    redirect: 'manual',
+    redirect: 'follow',
     signal: AbortSignal.timeout(ARTICLE_FETCH_TIMEOUT_MS),
   })
-
-  if (pageResponse.status >= 300 && pageResponse.status < 400) {
-    return null
-  }
 
   if (!pageResponse.ok) {
     return null
@@ -739,13 +551,8 @@ async function handleNewsSummarize(request, response) {
 
   try {
     payload = await readJson(request)
-  } catch (error) {
-    json(response, error?.status === 413 ? 413 : 400, {
-      message:
-        error?.status === 413
-          ? 'Dados da noticia muito grandes.'
-          : 'Nao foi possivel ler os dados da noticia.',
-    })
+  } catch {
+    json(response, 400, { message: 'Nao foi possivel ler os dados da noticia.' })
     return
   }
 
@@ -762,28 +569,23 @@ async function handleNewsSummarize(request, response) {
   }
 
   try {
+    const lookupUrl = new URL(NEWS_API_URL)
+    lookupUrl.searchParams.set('q', title)
+    lookupUrl.searchParams.set('language', 'pt')
+    lookupUrl.searchParams.set('sortBy', 'publishedAt')
+    lookupUrl.searchParams.set('pageSize', String(PAGE_SIZE * 2))
+
+    const lookupData = await fetchNewsApiJsonWithFallback(lookupUrl)
     const normalizedTargetUrl = normalizeUrl(url)
-    const cachedSummary = await findArticleSummaryByNormalizedUrl(normalizedTargetUrl)
+    const normalizedTargetTitle = title.trim().toLowerCase()
+    const foundArticle = (lookupData.articles ?? []).find((article) => {
+      const articleUrl = normalizeUrl(article.url)
+      const articleTitle = String(article.title ?? '').trim().toLowerCase()
 
-    if (cachedSummary) {
-      void publishEventSafely({
-        type: 'news.article_summary_cache_hit',
-        source: 'news-service',
-        payload: {
-          userEmail: sessionUser.email,
-          summaryId: cachedSummary.id,
-          url: cachedSummary.url,
-          title: cachedSummary.title,
-        },
-      })
+      return articleUrl === normalizedTargetUrl || articleTitle === normalizedTargetTitle
+    })
 
-      json(response, 200, {
-        summaryId: cachedSummary.id,
-      })
-      return
-    }
-
-    const articleFromPayload = {
+    const articleFromNewsApi = foundArticle ?? {
       title,
       url,
       author: author || 'Autor desconhecido',
@@ -804,20 +606,19 @@ async function handleNewsSummarize(request, response) {
     }
 
     const articleForPrompt = {
-      ...articleFromPayload,
+      ...articleFromNewsApi,
       content:
         articleFromUrl?.content ||
-        articleFromPayload.content ||
-        articleFromPayload.description ||
+        articleFromNewsApi.content ||
+        articleFromNewsApi.description ||
         description,
-      urlToImage: articleFromPayload.urlToImage || articleFromUrl?.urlToImage || urlToImage,
+      urlToImage: articleFromNewsApi.urlToImage || articleFromUrl?.urlToImage || urlToImage,
     }
 
     const prompt = buildSummaryPrompt(articleForPrompt)
     const summaryResponse = await fetch(new URL('/internal/ai/chat', getAiServiceUrl()), {
       method: 'POST',
       headers: {
-        ...buildInternalHeaders(),
         'content-type': 'application/json',
       },
       body: JSON.stringify({
@@ -834,112 +635,30 @@ async function handleNewsSummarize(request, response) {
         ],
         temperature: 0.3,
       }),
-      signal: AbortSignal.timeout(AI_REQUEST_TIMEOUT_MS),
     })
 
     const aiPayload = await summaryResponse.json().catch(() => null)
 
     if (!summaryResponse.ok) {
-      throw new Error(aiPayload?.message ?? AI_UNAVAILABLE_MESSAGE)
+      throw new Error(aiPayload?.message ?? 'Nao foi possivel gerar resumo.')
     }
 
     const summary = typeof aiPayload?.content === 'string' ? aiPayload.content.trim() : ''
-    const savedSummary = await upsertArticleSummary({
-      url: articleForPrompt.url ?? url,
-      normalizedUrl: normalizedTargetUrl,
-      title: articleForPrompt.title ?? title,
-      author: articleForPrompt.author ?? author,
-      source: articleForPrompt.source?.name || articleForPrompt.source || source,
-      publishedAt: articleForPrompt.publishedAt ?? payload?.publishedAt ?? null,
-      urlToImage: articleForPrompt.urlToImage ?? urlToImage,
-      summary,
-      provider: aiPayload?.provider ?? '',
-      model: aiPayload?.model ?? '',
-    })
-
-    void publishEventSafely({
-      type: 'news.summary_generated',
-      source: 'news-service',
-      payload: {
-        userEmail: sessionUser.email,
-        title: savedSummary.title,
-        url: savedSummary.url,
-        summaryId: savedSummary.id,
-        provider: aiPayload?.provider ?? '',
-        model: aiPayload?.model ?? '',
-      },
-    })
-    void publishEventSafely({
-      type: 'news.article_summary_created',
-      source: 'news-service',
-      payload: {
-        userEmail: sessionUser.email,
-        summaryId: savedSummary.id,
-        url: savedSummary.url,
-        title: savedSummary.title,
-        provider: savedSummary.provider,
-        model: savedSummary.model,
-      },
-    })
 
     json(response, 200, {
-      summaryId: savedSummary.id,
+      title: articleForPrompt.title ?? title,
+      author: articleForPrompt.author ?? author,
+      urlToImage: articleForPrompt.urlToImage ?? urlToImage,
+      url: articleForPrompt.url ?? url,
+      summary,
+      provider: aiPayload?.provider,
+      model: aiPayload?.model,
     })
   } catch (error) {
     console.error('[news-service] Failed to summarize news', error)
     json(response, 500, {
-      message: AI_UNAVAILABLE_MESSAGE,
+      message: error instanceof Error ? error.message : 'Nao foi possivel gerar o resumo agora.',
     })
-  }
-}
-
-async function handleGetNewsSummary(request, response, id) {
-  const sessionUser = getSessionUser(request)
-
-  if (!sessionUser) {
-    json(response, 401, { message: 'Sessao invalida. Faca login novamente.' })
-    return
-  }
-
-  if (!isUuid(id)) {
-    json(response, 400, { message: 'UUID do resumo invalido.' })
-    return
-  }
-
-  try {
-    const summary = await findArticleSummaryById(id)
-
-    if (!summary) {
-      json(response, 404, { message: 'Resumo nao encontrado.' })
-      return
-    }
-    void publishEventSafely({
-      type: 'news.article_summary_viewed',
-      source: 'news-service',
-      payload: {
-        userEmail: sessionUser.email,
-        summaryId: summary.id,
-        url: summary.url,
-        title: summary.title,
-      },
-    })
-
-    json(response, 200, {
-      id: summary.id,
-      title: summary.title,
-      author: summary.author,
-      source: summary.source,
-      publishedAt: summary.publishedAt,
-      urlToImage: summary.urlToImage,
-      url: summary.url,
-      summary: summary.summary,
-      provider: summary.provider,
-      model: summary.model,
-      createdAt: summary.createdAt,
-    })
-  } catch (error) {
-    console.error('[news-service] Failed to load stored summary', error)
-    json(response, 500, { message: 'Nao foi possivel carregar o resumo.' })
   }
 }
 
@@ -953,21 +672,10 @@ async function handleNewsMetrics(request, response) {
     const uniqueQueries = Array.from(new Set(rows.map((row) => row.query.trim()).filter(Boolean)))
     const themeByQuery = await classifySearchThemes(uniqueQueries)
     const metrics = buildMetrics(rows, themeByQuery)
-    const totalSearches = rows.reduce((total, row) => total + (Number(row.searchCount) || 0), 0)
-
-    void publishEventSafely({
-      type: 'news.metrics_generated',
-      source: 'news-service',
-      payload: {
-        totalSearches,
-        themeCount: metrics.themes.length,
-        userCount: metrics.users.length,
-      },
-    })
 
     json(response, 200, {
       generatedAt: new Date().toISOString(),
-      totalSearches,
+      totalSearches: rows.reduce((total, row) => total + (Number(row.searchCount) || 0), 0),
       ...metrics,
     })
   } catch (error) {
@@ -1008,13 +716,6 @@ async function route(request, response) {
 
   if (request.method === 'POST' && url.pathname === '/api/news/summarize') {
     await handleNewsSummarize(request, response)
-    return
-  }
-
-  const summaryMatch = url.pathname.match(/^\/api\/news\/summaries\/([^/]+)$/)
-
-  if (request.method === 'GET' && summaryMatch) {
-    await handleGetNewsSummary(request, response, summaryMatch[1])
     return
   }
 

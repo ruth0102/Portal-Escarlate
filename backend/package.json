@@ -13,6 +13,7 @@
     "dev:ai": "node --env-file=../.env --watch src/services/ai/server.js",
     "dev:ai-summary": "npm run dev:news-summary",
     "dev:news-summary": "node --env-file=../.env --watch src/services/news-summary/server.js",
+    "dev:article-summary": "node --env-file=../.env --watch src/services/article-summary/server.js",
     "dev:events": "node --env-file=../.env --watch src/services/events/server.js",
     "start": "node src/start.js"
   },

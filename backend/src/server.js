@@ -1,6 +1,7 @@
 import http from 'node:http'
 import { json } from './shared/http/json.js'
 import {
+  buildInternalHeaders,
   getAllowedOriginForRequest,
   isAllowedRequestOrigin,
   isStateChangingMethod,
@@ -41,6 +42,15 @@ const services = {
   news: {
     name: 'news',
     target: getServiceTarget('NEWS_SERVICE_URL', 'NEWS_SERVICE_HOST', 'NEWS_SERVICE_PORT', '3002'),
+  },
+  articleSummary: {
+    name: 'article-summary',
+    target: getServiceTarget(
+      'ARTICLE_SUMMARY_SERVICE_URL',
+      'ARTICLE_SUMMARY_SERVICE_HOST',
+      'ARTICLE_SUMMARY_SERVICE_PORT',
+      '3008',
+    ),
   },
   ai: {
     name: 'ai',
@@ -87,6 +97,10 @@ function pickService(pathname) {
     return services.newsSummary
   }
 
+  if (pathname === '/api/news/summarize' || pathname.startsWith('/api/news/summaries/')) {
+    return services.articleSummary
+  }
+
   if (pathname.startsWith('/api/news')) {
     return services.news
   }
@@ -102,72 +116,69 @@ function pickService(pathname) {
   return null
 }
 
+async function readRequestBody(request) {
+  if (request.method === 'GET' || request.method === 'HEAD') {
+    return null
+  }
+
+  const chunks = []
+
+  for await (const chunk of request) {
+    chunks.push(Buffer.from(chunk))
+  }
+
+  return Buffer.concat(chunks)
+}
+
+function normalizeResponseHeaders(headers) {
+  const normalized = { ...(headers ?? {}) }
+
+  delete normalized.connection
+  delete normalized['content-length']
+  delete normalized['transfer-encoding']
+
+  return normalized
+}
+
 async function proxy(request, response, service, url) {
-  const target = new URL(url.pathname + url.search, service.target)
   const headers = { ...request.headers }
   const corsHeaders = getCorsHeaders(request)
 
   delete headers.host
 
   try {
-    const upstream = await fetch(target, {
-      method: request.method,
-      headers,
-      body: request.method === 'GET' || request.method === 'HEAD' ? undefined : request,
-      duplex: 'half',
-      redirect: 'manual',
+    const body = await readRequestBody(request)
+    const busResponse = await fetch(new URL('/internal/service-request', services.events.target), {
+      method: 'POST',
+      headers: {
+        ...buildInternalHeaders(),
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        source: 'gateway',
+        service: service.name,
+        method: request.method,
+        path: url.pathname + url.search,
+        headers,
+        bodyBase64: body ? body.toString('base64') : '',
+      }),
       signal: AbortSignal.timeout(PROXY_TIMEOUT_MS),
     })
+    const busPayload = await busResponse.json().catch(() => null)
 
-    const responseHeaders = {}
-
-    upstream.headers.forEach((value, key) => {
-      if (key.toLowerCase() === 'set-cookie') {
-        return
-      }
-
-      responseHeaders[key] = value
-    })
-
-    const setCookies =
-      typeof upstream.headers.getSetCookie === 'function'
-        ? upstream.headers.getSetCookie()
-        : []
-
-    if (setCookies.length > 0) {
-      responseHeaders['set-cookie'] = setCookies
-    } else {
-      const setCookie = upstream.headers.get('set-cookie')
-
-      if (setCookie) {
-        responseHeaders['set-cookie'] = setCookie
-      }
+    if (!busResponse.ok || !busPayload) {
+      throw new Error(busPayload?.message ?? 'Barramento de eventos indisponivel.')
     }
 
+    const responseHeaders = normalizeResponseHeaders(busPayload.headers)
     Object.assign(responseHeaders, corsHeaders)
 
-    response.writeHead(upstream.status, responseHeaders)
-
-    if (!upstream.body) {
-      response.end()
-      return
-    }
-
-    const reader = upstream.body.getReader()
-
-    while (true) {
-      const { done, value } = await reader.read()
-
-      if (done) {
-        break
-      }
-
-      response.write(Buffer.from(value))
-    }
-
-    response.end()
+    response.writeHead(busPayload.status, responseHeaders)
+    response.end(
+      busPayload.bodyBase64 ? Buffer.from(busPayload.bodyBase64, 'base64') : undefined,
+    )
   } catch (error) {
-    console.error(`[gateway] Failed to proxy ${url.pathname} to ${service.name}`, error)
+    console.error(`[gateway] Failed to route ${url.pathname} to ${service.name} via event bus`, error)
     json(response, 502, { message: `Servico ${service.name} indisponivel.` })
   }
 }
@@ -215,10 +226,32 @@ async function health(response) {
   const entries = await Promise.all(
     Object.values(services).map(async (service) => {
       try {
-        const healthResponse = await fetch(new URL('/health', service.target), {
+        if (service.name === 'events') {
+          const healthResponse = await fetch(new URL('/health', service.target), {
+            signal: AbortSignal.timeout(2000),
+          })
+          return [service.name, healthResponse.ok ? 'ok' : 'unhealthy']
+        }
+
+        const healthResponse = await fetch(new URL('/internal/service-request', services.events.target), {
+          method: 'POST',
+          headers: {
+            ...buildInternalHeaders(),
+            'content-type': 'application/json',
+          },
+          body: JSON.stringify({
+            source: 'gateway',
+            service: service.name,
+            method: 'GET',
+            path: '/health',
+            headers: {},
+            bodyBase64: '',
+          }),
           signal: AbortSignal.timeout(2000),
         })
-        return [service.name, healthResponse.ok ? 'ok' : 'unhealthy']
+        const payload = await healthResponse.json().catch(() => null)
+
+        return [service.name, healthResponse.ok && payload?.status === 200 ? 'ok' : 'unhealthy']
       } catch {
         return [service.name, 'unavailable']
       }

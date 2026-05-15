@@ -1,8 +1,8 @@
 import { randomBytes } from 'node:crypto'
 import { getAppUrl } from '../env.js'
 import { publishEvent, publishEventSafely } from '../events/event-client.js'
+import { requestService } from '../events/service-request-client.js'
 import { hashPassword } from './password.js'
-import { buildInternalHeaders } from '../../shared/http/security.js'
 import { consumeRegisterRateLimit } from './register-rate-limit.js'
 import {
   consumePendingRegistration,
@@ -22,17 +22,6 @@ function generateVerificationToken() {
   return randomBytes(32).toString('base64url')
 }
 
-function getAuthServiceUrl() {
-  if (process.env.AUTH_SERVICE_URL) {
-    return process.env.AUTH_SERVICE_URL.replace(/\/+$/g, '')
-  }
-
-  const host = process.env.AUTH_SERVICE_HOST ?? process.env.HOST ?? '127.0.0.1'
-  const port = process.env.AUTH_SERVICE_PORT ?? '3001'
-
-  return `http://${host}:${port}`
-}
-
 async function requestVerificationEmail(input) {
   await publishEvent({
     type: 'email.verification_requested',
@@ -42,11 +31,9 @@ async function requestVerificationEmail(input) {
 }
 
 async function checkAuthUserExists(email) {
-  const url = new URL('/internal/auth/users/exists', getAuthServiceUrl())
-  url.searchParams.set('email', email)
-
-  const response = await fetch(url, {
-    headers: buildInternalHeaders(),
+  const path = `/internal/auth/users/exists?email=${encodeURIComponent(email)}`
+  const response = await requestService('auth', path, {
+    source: 'registration-service',
   })
   const payload = await response.json().catch(() => null)
 
@@ -58,13 +45,13 @@ async function checkAuthUserExists(email) {
 }
 
 async function requestAuthUserCreation(input) {
-  const response = await fetch(new URL('/internal/auth/users', getAuthServiceUrl()), {
+  const response = await requestService('auth', '/internal/auth/users', {
     method: 'POST',
     headers: {
-      ...buildInternalHeaders(),
       'content-type': 'application/json',
     },
     body: JSON.stringify(input),
+    source: 'registration-service',
   })
 
   const payload = await response.json().catch(() => null)
