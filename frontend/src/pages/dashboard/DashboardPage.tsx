@@ -94,49 +94,25 @@ export function DashboardPage() {
             <h1 className={styles.title}>Portal Escarlate</h1>
           </div>
 
-          <button
-            className={styles.action}
-            type="button"
-            onClick={handleLogout}
-            disabled={logoutLoading}
-          >
-            {logoutLoading ? 'Saindo...' : 'Sair'}
-          </button>
+          <div className={styles.headerActions}>
+            <Link className={styles.action} to="/configuracoes">
+              Configurações
+            </Link>
+
+            <button
+              className={styles.action}
+              type="button"
+              onClick={handleLogout}
+              disabled={logoutLoading}
+            >
+              {logoutLoading ? 'Saindo...' : 'Sair'}
+            </button>
+          </div>
         </div>
 
         {logoutError ? <p className={styles.adminError}>{logoutError}</p> : null}
 
         <div className={styles.grid}>
-          <article className={styles.card}>
-            <span className={styles.label}>Conta ativa</span>
-            <strong className={styles.value}>{user?.email}</strong>
-            <p className={styles.copy}>
-              Acesso liberado para acompanhar buscas, sínteses e histórico de curadoria do
-              Portal Escarlate.
-            </p>
-          </article>
-
-          <article className={styles.card}>
-            <span className={styles.label}>Perfil</span>
-            <strong className={styles.value}>
-              {user?.role === 'admin' ? 'Administrador' : 'Usuário'}
-            </strong>
-            <p className={styles.copy}>
-              Permissões aplicadas para organizar o acesso aos recursos editoriais e de
-              pesquisa.
-            </p>
-            {user?.role === 'admin' && (
-              <div className={styles.adminButtonGroup}>
-                <Link className={styles.adminButton} to="/admin/email-connections">
-                  Conexões
-                </Link>
-                <Link className={styles.adminButton} to="/admin/news-metrics">
-                  Métricas
-                </Link>
-              </div>
-            )}
-          </article>
-
           <article className={styles.cardWide}>
             <span className={styles.label}>Central de pesquisa</span>
             <strong className={styles.value}>Notícias, contexto e síntese editorial</strong>
@@ -147,6 +123,21 @@ export function DashboardPage() {
 
             <NewsSearch />
           </article>
+        </div>
+
+        <div className={styles.mobileDashboardActions}>
+          <Link className={styles.action} to="/configuracoes">
+            Configurações
+          </Link>
+
+          <button
+            className={styles.action}
+            type="button"
+            onClick={handleLogout}
+            disabled={logoutLoading}
+          >
+            {logoutLoading ? 'Saindo...' : 'Sair'}
+          </button>
         </div>
       </section>
     </main>

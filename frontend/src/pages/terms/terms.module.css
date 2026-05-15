@@ -10,17 +10,17 @@
   width: min(980px, 100%);
   padding: 48px;
   border-radius: 28px;
-  border: 1px solid rgba(231, 197, 102, 0.16);
+  border: 1px solid rgba(var(--brand-primary-rgb), 0.16);
   background:
     linear-gradient(135deg, rgba(255, 255, 255, 0.035), rgba(255, 255, 255, 0.01)),
-    rgba(8, 3, 4, 0.68);
+    rgba(var(--surface-base-rgb), 0.68);
   box-shadow: var(--shadow-main);
 }
 
 .kicker {
   display: block;
   margin-bottom: 12px;
-  color: rgba(248, 237, 208, 0.58);
+  color: rgba(var(--text-main-rgb), 0.58);
   font-size: 0.78rem;
   letter-spacing: 0.26rem;
   text-transform: uppercase;
@@ -35,7 +35,7 @@
 
 .lead,
 .section p {
-  color: rgba(248, 237, 208, 0.78);
+  color: rgba(var(--text-main-rgb), 0.78);
   line-height: 1.8;
 }
 
@@ -46,7 +46,7 @@
 
 .section {
   padding: 22px 0;
-  border-top: 1px solid rgba(231, 197, 102, 0.13);
+  border-top: 1px solid rgba(var(--brand-primary-rgb), 0.13);
 }
 
 .section h2 {
@@ -73,8 +73,8 @@
   min-height: 48px;
   padding: 0 20px;
   border-radius: 12px;
-  border: 1px solid rgba(231, 197, 102, 0.32);
-  background: rgba(120, 10, 16, 0.24);
+  border: 1px solid rgba(var(--brand-primary-rgb), 0.32);
+  background: rgba(var(--surface-accent-rgb), 0.24);
   color: var(--gold-1);
   text-decoration: none;
   text-transform: uppercase;

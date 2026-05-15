@@ -1,0 +1,345 @@
+:root {
+  /* Core brand palette */
+  --color-ink-950: #050203;
+  --color-ink-900: #080304;
+  --color-ink-850: #110405;
+  --color-ink-800: #140607;
+  --color-wine-900: #22080a;
+  --color-wine-800: #2f0608;
+  --color-crimson-700: #5a0d12;
+  --color-crimson-600: #8f1019;
+  --color-ruby-500: #b91c1c;
+  --color-gold-100: #fef1b8;
+  --color-gold-200: #ffe9a7;
+  --color-gold-300: #f3d37c;
+  --color-gold-400: #e7c566;
+  --color-gold-500: #dcb04e;
+  --color-gold-600: #b98724;
+  --color-gold-700: #9c6514;
+  --color-gold-800: #75520f;
+  --color-cream-100: #f8edd0;
+  --color-cream-200: #dacaa0;
+  --color-cream-300: #fff0c1;
+  --color-cream-400: #fff2c0;
+  --color-danger-100: #ffd4d0;
+  --color-danger-200: #ffc5c5;
+  --color-danger-300: #ffb8b8;
+  --color-paper-50: #fffaf0;
+  --color-paper-100: #f8f0dd;
+  --color-paper-200: #eadfc5;
+  --color-graphite-900: #211819;
+  --color-graphite-800: #332728;
+  --color-graphite-700: #5a4545;
+
+  /* Dark theme is the default visual identity. */
+  --theme-color-scheme: dark;
+  --surface-base-rgb: 8, 3, 4;
+  --surface-wine-rgb: 40, 6, 9;
+  --surface-accent-rgb: 120, 10, 16;
+  --text-main-rgb: 248, 237, 208;
+  --brand-primary-rgb: 231, 197, 102;
+  --brand-secondary-rgb: 185, 28, 28;
+  --shadow-rgb: 0, 0, 0;
+  --surface-page: var(--color-ink-900);
+  --surface-page-deep: var(--color-ink-800);
+  --surface-panel: rgba(255, 255, 255, 0.035);
+  --surface-panel-strong: rgba(8, 3, 4, 0.68);
+  --surface-panel-red: rgba(120, 10, 16, 0.16);
+  --surface-control: rgba(8, 3, 4, 0.46);
+  --surface-control-strong: rgba(8, 3, 4, 0.96);
+  --surface-danger: rgba(116, 16, 22, 0.28);
+
+  --text-main: var(--color-cream-100);
+  --text-soft: var(--color-cream-200);
+  --text-fade: rgba(248, 237, 208, 0.72);
+  --text-muted: rgba(248, 237, 208, 0.58);
+  --text-subtle: rgba(248, 237, 208, 0.42);
+  --text-danger: var(--color-danger-300);
+  --text-on-gold: #2c1106;
+
+  --brand-primary: var(--color-gold-400);
+  --brand-primary-light: var(--color-gold-100);
+  --brand-primary-soft: rgba(231, 197, 102, 0.12);
+  --brand-secondary: var(--color-ruby-500);
+  --brand-secondary-soft: rgba(185, 28, 28, 0.16);
+
+  --line-soft: rgba(231, 197, 102, 0.24);
+  --line-muted: rgba(231, 197, 102, 0.14);
+  --line-strong: rgba(231, 197, 102, 0.48);
+  --line-danger: rgba(255, 126, 126, 0.38);
+
+  /* Effects */
+  --glow-gold: 0 0 32px rgba(231, 197, 102, 0.16);
+  --glow-red: 0 0 40px rgba(185, 28, 28, 0.16);
+  --shadow-main: 0 40px 120px rgba(0, 0, 0, 0.55);
+  --shadow-panel: 0 48px 140px rgba(0, 0, 0, 0.62);
+  --shadow-control: 0 14px 30px rgba(0, 0, 0, 0.16);
+
+  --gradient-page:
+    radial-gradient(circle at 18% 14%, rgba(231, 197, 102, 0.16), transparent 20%),
+    radial-gradient(circle at 82% 16%, rgba(185, 28, 28, 0.22), transparent 24%),
+    radial-gradient(circle at 50% 50%, rgba(120, 10, 16, 0.14), transparent 30%),
+    radial-gradient(circle at 70% 72%, rgba(231, 197, 102, 0.08), transparent 26%),
+    linear-gradient(
+      130deg,
+      var(--color-ink-950) 0%,
+      var(--color-ink-800) 24%,
+      var(--color-wine-900) 54%,
+      var(--color-ink-850) 76%,
+      var(--color-ink-950) 100%
+    );
+  --gradient-grid:
+    repeating-linear-gradient(
+      90deg,
+      transparent 0,
+      transparent 120px,
+      rgba(231, 197, 102, 0.025) 121px,
+      transparent 122px
+    ),
+    repeating-linear-gradient(
+      0deg,
+      transparent 0,
+      transparent 120px,
+      rgba(231, 197, 102, 0.018) 121px,
+      transparent 122px
+    );
+  --gradient-vignette:
+    radial-gradient(circle at center, transparent 52%, rgba(0, 0, 0, 0.42) 100%),
+    linear-gradient(
+      180deg,
+      rgba(255, 255, 255, 0.02),
+      transparent 22%,
+      transparent 78%,
+      rgba(255, 255, 255, 0.02)
+    );
+  --gradient-gold:
+    linear-gradient(
+      135deg,
+      var(--color-gold-100),
+      var(--color-gold-500) 55%,
+      var(--color-gold-700)
+    );
+
+  /* Legacy aliases kept while component styles are migrated. */
+  --bg-black: var(--color-ink-900);
+  --bg-deep: var(--color-ink-800);
+  --wine: var(--color-wine-800);
+  --crimson: var(--color-crimson-700);
+  --scarlet: var(--color-crimson-600);
+  --ruby: var(--color-ruby-500);
+  --gold-1: var(--color-gold-100);
+  --gold-2: var(--color-gold-400);
+  --gold-3: var(--color-gold-600);
+  --gold-4: var(--color-gold-800);
+
+  /* Layout and typography tokens */
+  --radius-lg: 34px;
+  --radius-md: 22px;
+  --radius-sm: 14px;
+  --transition: 220ms ease;
+  --font-ui: "Segoe UI", "Helvetica Neue", system-ui, sans-serif;
+  --font-display: Georgia, "Times New Roman", serif;
+}
+
+html[data-theme="light"],
+body[data-theme="light"],
+.theme-light {
+  --theme-color-scheme: light;
+  --surface-base-rgb: 255, 252, 246;
+  --surface-wine-rgb: 255, 247, 232;
+  --surface-accent-rgb: 244, 226, 190;
+  --text-main-rgb: 37, 29, 27;
+  --brand-primary-rgb: 137, 90, 12;
+  --brand-secondary-rgb: 132, 22, 28;
+  --shadow-rgb: 72, 46, 35;
+
+  --surface-page: #fffdf8;
+  --surface-page-deep: #fbf1dd;
+  --surface-panel: rgba(255, 255, 255, 0.86);
+  --surface-panel-strong: rgba(255, 252, 246, 0.94);
+  --surface-panel-red: rgba(132, 22, 28, 0.075);
+  --surface-control: rgba(255, 252, 246, 0.82);
+  --surface-control-strong: rgba(255, 252, 246, 0.98);
+  --surface-danger: rgba(132, 22, 28, 0.1);
+
+  --text-main: #251d1b;
+  --text-soft: #3d302e;
+  --text-fade: rgba(37, 29, 27, 0.76);
+  --text-muted: rgba(37, 29, 27, 0.64);
+  --text-subtle: rgba(37, 29, 27, 0.48);
+  --text-danger: #84161c;
+  --text-on-gold: #241509;
+
+  --brand-primary: #895a0c;
+  --brand-primary-light: #6c4207;
+  --brand-primary-soft: rgba(137, 90, 12, 0.14);
+  --brand-secondary: #84161c;
+  --brand-secondary-soft: rgba(132, 22, 28, 0.11);
+
+  --line-soft: rgba(137, 90, 12, 0.22);
+  --line-muted: rgba(137, 90, 12, 0.14);
+  --line-strong: rgba(137, 90, 12, 0.42);
+  --line-danger: rgba(132, 22, 28, 0.32);
+
+  --glow-gold: 0 0 26px rgba(137, 90, 12, 0.12);
+  --glow-red: 0 0 34px rgba(132, 22, 28, 0.1);
+  --shadow-main: 0 34px 90px rgba(72, 46, 35, 0.16);
+  --shadow-panel: 0 38px 90px rgba(72, 46, 35, 0.18);
+  --shadow-control: 0 12px 26px rgba(72, 46, 35, 0.1);
+
+  --gradient-page:
+    radial-gradient(circle at 18% 14%, rgba(231, 197, 102, 0.22), transparent 22%),
+    radial-gradient(circle at 82% 12%, rgba(132, 22, 28, 0.08), transparent 24%),
+    radial-gradient(circle at 42% 58%, rgba(255, 255, 255, 0.72), transparent 34%),
+    linear-gradient(
+      130deg,
+      #fffdf8 0%,
+      #fbf1dd 42%,
+      #f3e4c8 72%,
+      #fffaf0 100%
+    );
+  --gradient-grid:
+    repeating-linear-gradient(
+      90deg,
+      transparent 0,
+      transparent 120px,
+      rgba(137, 90, 12, 0.032) 121px,
+      transparent 122px
+    ),
+    repeating-linear-gradient(
+      0deg,
+      transparent 0,
+      transparent 120px,
+      rgba(132, 22, 28, 0.018) 121px,
+      transparent 122px
+    );
+  --gradient-vignette:
+    radial-gradient(circle at center, transparent 64%, rgba(137, 90, 12, 0.1) 100%),
+    linear-gradient(
+      180deg,
+      rgba(255, 255, 255, 0.24),
+      transparent 24%,
+      transparent 78%,
+      rgba(137, 90, 12, 0.06)
+    );
+  --gradient-gold:
+    linear-gradient(
+      135deg,
+      #fff5cb,
+      var(--color-gold-400) 55%,
+      var(--color-gold-600)
+    );
+
+  --bg-black: #fffdf8;
+  --bg-deep: #fbf1dd;
+  --wine: #f3e4c8;
+  --crimson: #d9c18f;
+  --scarlet: #895a0c;
+  --ruby: #84161c;
+  --gold-1: #5d3b0b;
+  --gold-2: #895a0c;
+  --gold-3: #b98724;
+  --gold-4: #75520f;
+}
+
+@media (prefers-color-scheme: light) {
+  html:not([data-theme="dark"]),
+  body:not([data-theme="dark"]) {
+    --theme-color-scheme: light;
+    --surface-base-rgb: 255, 252, 246;
+    --surface-wine-rgb: 255, 247, 232;
+    --surface-accent-rgb: 244, 226, 190;
+    --text-main-rgb: 37, 29, 27;
+    --brand-primary-rgb: 137, 90, 12;
+    --brand-secondary-rgb: 132, 22, 28;
+    --shadow-rgb: 72, 46, 35;
+
+    --surface-page: #fffdf8;
+    --surface-page-deep: #fbf1dd;
+    --surface-panel: rgba(255, 255, 255, 0.86);
+    --surface-panel-strong: rgba(255, 252, 246, 0.94);
+    --surface-panel-red: rgba(132, 22, 28, 0.075);
+    --surface-control: rgba(255, 252, 246, 0.82);
+    --surface-control-strong: rgba(255, 252, 246, 0.98);
+    --surface-danger: rgba(132, 22, 28, 0.1);
+
+    --text-main: #251d1b;
+    --text-soft: #3d302e;
+    --text-fade: rgba(37, 29, 27, 0.76);
+    --text-muted: rgba(37, 29, 27, 0.64);
+    --text-subtle: rgba(37, 29, 27, 0.48);
+    --text-danger: #84161c;
+    --text-on-gold: #241509;
+
+    --brand-primary: #895a0c;
+    --brand-primary-light: #6c4207;
+    --brand-primary-soft: rgba(137, 90, 12, 0.14);
+    --brand-secondary: #84161c;
+    --brand-secondary-soft: rgba(132, 22, 28, 0.11);
+
+    --line-soft: rgba(137, 90, 12, 0.22);
+    --line-muted: rgba(137, 90, 12, 0.14);
+    --line-strong: rgba(137, 90, 12, 0.42);
+    --line-danger: rgba(132, 22, 28, 0.32);
+
+    --glow-gold: 0 0 26px rgba(137, 90, 12, 0.12);
+    --glow-red: 0 0 34px rgba(132, 22, 28, 0.1);
+    --shadow-main: 0 34px 90px rgba(72, 46, 35, 0.16);
+    --shadow-panel: 0 38px 90px rgba(72, 46, 35, 0.18);
+    --shadow-control: 0 12px 26px rgba(72, 46, 35, 0.1);
+
+    --gradient-page:
+      radial-gradient(circle at 18% 14%, rgba(231, 197, 102, 0.22), transparent 22%),
+      radial-gradient(circle at 82% 12%, rgba(132, 22, 28, 0.08), transparent 24%),
+      radial-gradient(circle at 42% 58%, rgba(255, 255, 255, 0.72), transparent 34%),
+      linear-gradient(
+        130deg,
+        #fffdf8 0%,
+        #fbf1dd 42%,
+        #f3e4c8 72%,
+        #fffaf0 100%
+      );
+    --gradient-grid:
+      repeating-linear-gradient(
+        90deg,
+        transparent 0,
+        transparent 120px,
+        rgba(137, 90, 12, 0.032) 121px,
+        transparent 122px
+      ),
+      repeating-linear-gradient(
+        0deg,
+        transparent 0,
+        transparent 120px,
+        rgba(132, 22, 28, 0.018) 121px,
+        transparent 122px
+      );
+    --gradient-vignette:
+      radial-gradient(circle at center, transparent 64%, rgba(137, 90, 12, 0.1) 100%),
+      linear-gradient(
+        180deg,
+        rgba(255, 255, 255, 0.24),
+        transparent 24%,
+        transparent 78%,
+        rgba(137, 90, 12, 0.06)
+      );
+    --gradient-gold:
+      linear-gradient(
+        135deg,
+        #fff5cb,
+        var(--color-gold-400) 55%,
+        var(--color-gold-600)
+      );
+
+    --bg-black: #fffdf8;
+    --bg-deep: #fbf1dd;
+    --wine: #f3e4c8;
+    --crimson: #d9c18f;
+    --scarlet: #895a0c;
+    --ruby: #84161c;
+    --gold-1: #5d3b0b;
+    --gold-2: #895a0c;
+    --gold-3: #b98724;
+    --gold-4: #75520f;
+  }
+}
