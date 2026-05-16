@@ -1,9 +1,17 @@
 import http from 'node:http'
+import { publishEventSafely } from '../../lib/events/event-client.js'
+import { requestService } from '../../lib/events/service-request-client.js'
 import { listActiveNewsApiKeys, markNewsApiKeyFailure } from '../../lib/news/api-key-repo.js'
 import {
+  assignHistoryThemes,
   createNewsSearchHistory,
   listNewsSearchMetricRows,
   listRecentNewsSearchQueries,
+  listSearchThemes,
+  listUnlinkedSearchHistory,
+  normalizeThemeKey,
+  normalizeThemeName,
+  upsertSearchThemeNames,
 } from '../../lib/news/search-history-repo.js'
 import { json, noContent, readJson } from '../../shared/http/json.js'
 import { getSessionUser } from '../../shared/http/session-user.js'
@@ -12,111 +20,22 @@ const port = Number.parseInt(process.env.NEWS_SERVICE_PORT ?? '3002', 10)
 const hostname = process.env.HOST ?? '127.0.0.1'
 const NEWS_API_URL = 'https://newsapi.org/v2/everything'
 const PAGE_SIZE = 20
-const ARTICLE_FETCH_TIMEOUT_MS = 7000
-const MAX_ARTICLE_HTML_LENGTH = 1_500_000
-const MAX_ARTICLE_TEXT_LENGTH = 12_000
+const NEWS_API_TIMEOUT_MS = 10000
+const AI_REQUEST_TIMEOUT_MS = 45000
+const FAILED_NEWS_API_KEY_COOLDOWN_MS = 5 * 60 * 1000
+
+let newsApiKeysCache = null
+let newsApiKeysCachePromise = null
+const failedNewsApiKeys = new Map()
 
 function sanitizeQuery(value) {
-  if (typeof value !== 'string') {
-    return ''
-  }
-
-  return value.trim()
+  return typeof value === 'string' ? value.trim() : ''
 }
 
 function sanitizePage(value) {
   const parsed = Number.parseInt(String(value ?? '1'), 10)
 
-  if (!Number.isFinite(parsed) || parsed < 1) {
-    return 1
-  }
-
-  return parsed
-}
-
-function getAiServiceUrl() {
-  if (process.env.AI_SERVICE_URL) {
-    return process.env.AI_SERVICE_URL.replace(/\/+$/g, '')
-  }
-
-  const serviceHost = process.env.AI_SERVICE_HOST ?? process.env.HOST ?? '127.0.0.1'
-  const servicePort = process.env.AI_SERVICE_PORT ?? '3004'
-
-  return `http://${serviceHost}:${servicePort}`
-}
-
-function extractNewsApiError(payload, response) {
-  if (typeof payload?.message === 'string' && payload.message.trim()) {
-    return payload.message.trim()
-  }
-
-  if (typeof payload?.code === 'string' && payload.code.trim()) {
-    return payload.code.trim()
-  }
-
-  return response.statusText || `Erro externo ${response.status}`
-}
-
-async function fetchNewsApiJsonWithFallback(url) {
-  const apiKeys = await listActiveNewsApiKeys()
-
-  if (apiKeys.length === 0) {
-    throw new Error('Nenhuma chave ativa da NewsAPI cadastrada no banco de dados.')
-  }
-
-  let lastError
-
-  for (const apiKey of apiKeys) {
-    try {
-      const responseFromApi = await fetch(url.toString(), {
-        method: 'GET',
-        headers: {
-          'X-Api-Key': apiKey.apiKey,
-        },
-        cache: 'no-store',
-      })
-      const data = await responseFromApi.json().catch(() => ({}))
-
-      if (!responseFromApi.ok) {
-        const message = extractNewsApiError(data, responseFromApi)
-        lastError = new Error(`NewsAPI falhou com a chave ${apiKey.label || apiKey.id}: ${message}`)
-
-        await markNewsApiKeyFailure({
-          id: apiKey.id,
-          error: message,
-        })
-
-        console.warn('[news-service] NewsAPI key failed, trying next fallback when available', {
-          id: apiKey.id,
-          label: apiKey.label,
-          status: responseFromApi.status,
-          message,
-        })
-        continue
-      }
-
-      return data
-    } catch (error) {
-      lastError = error
-
-      await markNewsApiKeyFailure({
-        id: apiKey.id,
-        error: error instanceof Error ? error.message : 'Erro desconhecido ao consultar NewsAPI.',
-      }).catch(() => undefined)
-
-      console.warn('[news-service] NewsAPI key request failed, trying next fallback when available', {
-        id: apiKey.id,
-        label: apiKey.label,
-        message: error instanceof Error ? error.message : 'Unknown error',
-      })
-    }
-  }
-
-  if (lastError instanceof Error) {
-    throw lastError
-  }
-
-  throw new Error('Nenhuma chave da NewsAPI conseguiu completar a requisicao.')
+  return Number.isFinite(parsed) && parsed >= 1 ? parsed : 1
 }
 
 function requireAdmin(request, response) {
@@ -135,45 +54,178 @@ function requireAdmin(request, response) {
   return sessionUser
 }
 
-function buildThemePrompt(queries) {
-  return [
-    'Voce padroniza termos de busca de noticias em temas analiticos.',
-    'Receba uma lista JSON de pesquisas e retorne apenas JSON valido.',
-    'Nao use Markdown, titulo, explicacoes, listas textuais ou comentarios.',
-    'Pesquisas similares devem cair no mesmo tema padronizado.',
-    'Use temas curtos, em portugues do Brasil, com 1 a 4 palavras.',
-    'Exemplos: "eleicao brasil", "eleicoes brasileiras" e "politica eleitoral" podem virar "Politica eleitoral".',
-    'Formato obrigatorio de resposta:',
-    '[{"query":"texto original","theme":"Tema padronizado"}]',
-    '',
-    JSON.stringify(queries),
-  ].join('\n')
+function extractNewsApiError(payload, response) {
+  if (typeof payload?.message === 'string' && payload.message.trim()) {
+    return payload.message.trim()
+  }
+
+  if (typeof payload?.code === 'string' && payload.code.trim()) {
+    return payload.code.trim()
+  }
+
+  return response.statusText || `Erro externo ${response.status}`
+}
+
+function isNewsApiKeyCoolingDown(apiKeyId) {
+  const failedAt = failedNewsApiKeys.get(apiKeyId)
+
+  if (!failedAt) {
+    return false
+  }
+
+  if (Date.now() - failedAt > FAILED_NEWS_API_KEY_COOLDOWN_MS) {
+    failedNewsApiKeys.delete(apiKeyId)
+    return false
+  }
+
+  return true
+}
+
+async function getCachedNewsApiKeys({ forceRefresh = false } = {}) {
+  if (newsApiKeysCache && !forceRefresh) {
+    return newsApiKeysCache
+  }
+
+  if (!newsApiKeysCachePromise) {
+    newsApiKeysCachePromise = listActiveNewsApiKeys()
+      .then((apiKeys) => {
+        newsApiKeysCache = apiKeys
+        return apiKeys
+      })
+      .finally(() => {
+        newsApiKeysCachePromise = null
+      })
+  }
+
+  return newsApiKeysCachePromise
+}
+
+async function fetchNewsApiJsonWithFallback(url) {
+  let apiKeys = await getCachedNewsApiKeys()
+  let lastError
+  let refreshedAfterFailure = false
+
+  while (true) {
+    if (apiKeys.length === 0) {
+      throw new Error('Nenhuma chave ativa da NewsAPI cadastrada no banco de dados.')
+    }
+
+    let refreshedDuringLoop = false
+
+    for (const apiKey of apiKeys) {
+      if (isNewsApiKeyCoolingDown(apiKey.id)) {
+        continue
+      }
+
+      try {
+        const responseFromApi = await fetch(url.toString(), {
+          method: 'GET',
+          headers: {
+            'X-Api-Key': apiKey.apiKey,
+          },
+          cache: 'no-store',
+          signal: AbortSignal.timeout(NEWS_API_TIMEOUT_MS),
+        })
+        const data = await responseFromApi.json().catch(() => ({}))
+
+        if (!responseFromApi.ok) {
+          const message = extractNewsApiError(data, responseFromApi)
+          lastError = new Error(`NewsAPI falhou com a chave ${apiKey.provider || apiKey.id}: ${message}`)
+          failedNewsApiKeys.set(apiKey.id, Date.now())
+
+          await markNewsApiKeyFailure({
+            id: apiKey.id,
+            error: message,
+          })
+
+          if (!refreshedAfterFailure) {
+            apiKeys = await getCachedNewsApiKeys({ forceRefresh: true })
+            refreshedAfterFailure = true
+            refreshedDuringLoop = true
+            break
+          }
+
+          continue
+        }
+
+        failedNewsApiKeys.delete(apiKey.id)
+        return data
+      } catch (error) {
+        lastError = error
+        failedNewsApiKeys.set(apiKey.id, Date.now())
+
+        await markNewsApiKeyFailure({
+          id: apiKey.id,
+          error: error instanceof Error ? error.message : 'Erro desconhecido ao consultar NewsAPI.',
+        }).catch(() => undefined)
+
+        if (!refreshedAfterFailure) {
+          apiKeys = await getCachedNewsApiKeys({ forceRefresh: true })
+          refreshedAfterFailure = true
+          refreshedDuringLoop = true
+          break
+        }
+      }
+    }
+
+    if (!refreshedDuringLoop) {
+      break
+    }
+  }
+
+  if (lastError instanceof Error) {
+    throw lastError
+  }
+
+  throw new Error('Nenhuma chave da NewsAPI conseguiu completar a requisicao.')
 }
 
 function stripJsonFence(value) {
-  return value
+  return String(value ?? '')
     .trim()
     .replace(/^```(?:json)?\s*/i, '')
     .replace(/\s*```$/i, '')
     .trim()
 }
 
-function normalizeTheme(value) {
-  const theme = String(value ?? '').trim()
-
-  if (!theme) {
-    return 'Nao classificado'
-  }
-
-  return theme.charAt(0).toUpperCase() + theme.slice(1)
+function buildThemeAssignmentPrompt(input) {
+  return [
+    'Voce organiza historicos de pesquisa de noticias em temas analiticos.',
+    'Receba os temas existentes e os historicos ainda sem tema.',
+    'Conecte cada historico a um tema existente quando o assunto for semanticamente equivalente ou muito proximo.',
+    'Se um historico for de assunto distinto dos temas existentes, crie um novo tema generico, curto e abrangente.',
+    'Use temas em portugues do Brasil, com 1 a 4 palavras, sem pontuacao decorativa.',
+    'Retorne apenas JSON valido. Nao use Markdown, explicacoes, listas textuais ou comentarios.',
+    'Formato obrigatorio:',
+    '{"newThemes":[{"name":"Tema novo"}],"assignments":[{"historyId":"uuid","themeName":"Tema existente ou novo"}]}',
+    'O campo historyId deve ser exatamente um dos ids recebidos.',
+    'O campo themeName deve ser exatamente o nome de um tema existente ou novo.',
+    '',
+    JSON.stringify({
+      existingThemes: input.existingThemes.map((theme) => ({
+        id: theme.id,
+        name: theme.name,
+      })),
+      unlinkedHistory: input.unlinkedHistory.map((history) => ({
+        id: history.id,
+        query: history.query,
+        userEmail: history.userEmail,
+        totalResults: history.totalResults,
+        createdAt: history.createdAt,
+      })),
+    }),
+  ].join('\n')
 }
 
-async function classifySearchThemes(queries) {
-  if (queries.length === 0) {
-    return new Map()
+async function classifyUnlinkedHistory(existingThemes, unlinkedHistory) {
+  if (unlinkedHistory.length === 0) {
+    return {
+      newThemes: [],
+      assignments: [],
+    }
   }
 
-  const response = await fetch(new URL('/internal/ai/chat', getAiServiceUrl()), {
+  const response = await requestService('ai', '/internal/ai/chat', {
     method: 'POST',
     headers: {
       'content-type': 'application/json',
@@ -183,47 +235,103 @@ async function classifySearchThemes(queries) {
         {
           role: 'system',
           content:
-            'Voce classifica pesquisas em temas padronizados e retorna apenas JSON valido.',
+            'Voce classifica historicos de pesquisa em temas e retorna apenas JSON valido.',
         },
         {
           role: 'user',
-          content: buildThemePrompt(queries),
+          content: buildThemeAssignmentPrompt({ existingThemes, unlinkedHistory }),
         },
       ],
       temperature: 0,
     }),
+    source: 'news-service',
+    signal: AbortSignal.timeout(AI_REQUEST_TIMEOUT_MS),
   })
-
   const payload = await response.json().catch(() => null)
 
   if (!response.ok) {
-    throw new Error(payload?.message ?? 'Nao foi possivel classificar temas com IA.')
+    throw new Error(payload?.message ?? 'Nao foi possivel classificar historicos com IA.')
   }
 
-  const content = typeof payload?.content === 'string' ? stripJsonFence(payload.content) : ''
+  const content = stripJsonFence(payload?.content)
   const parsed = JSON.parse(content)
-  const themeByQuery = new Map()
 
-  if (!Array.isArray(parsed)) {
+  if (!parsed || typeof parsed !== 'object' || !Array.isArray(parsed.assignments)) {
     throw new Error('A IA retornou metricas em formato invalido.')
   }
 
-  for (const item of parsed) {
-    if (typeof item?.query === 'string') {
-      themeByQuery.set(item.query.trim().toLowerCase(), normalizeTheme(item.theme))
-    }
+  return {
+    newThemes: Array.isArray(parsed.newThemes)
+      ? parsed.newThemes.map((theme) => normalizeThemeName(theme?.name)).filter(Boolean)
+      : [],
+    assignments: parsed.assignments
+      .map((assignment) => ({
+        historyId: String(assignment?.historyId ?? '').trim(),
+        themeName: normalizeThemeName(assignment?.themeName),
+      }))
+      .filter((assignment) => assignment.historyId && assignment.themeName),
   }
-
-  return themeByQuery
 }
 
-function buildMetrics(rows, themeByQuery) {
+async function classifyAndPersistUnlinkedHistory() {
+  const unlinkedHistory = await listUnlinkedSearchHistory(500)
+
+  if (unlinkedHistory.length === 0) {
+    return
+  }
+
+  const existingThemes = await listSearchThemes()
+  const aiResult = await classifyUnlinkedHistory(existingThemes, unlinkedHistory)
+  const existingThemeNames = existingThemes.map((theme) => theme.name)
+  const assignmentByHistoryId = new Map(
+    aiResult.assignments.map((assignment) => [assignment.historyId, assignment.themeName]),
+  )
+  const completedAssignments = unlinkedHistory.map((history) => ({
+    historyId: history.id,
+    themeName:
+      assignmentByHistoryId.get(history.id) ||
+      normalizeThemeName(history.query) ||
+      'Nao classificado',
+  }))
+  const assignedThemeNames = completedAssignments.map((assignment) => assignment.themeName)
+  const themeByKey = await upsertSearchThemeNames([
+    ...existingThemeNames,
+    ...aiResult.newThemes,
+    ...assignedThemeNames,
+  ])
+  const validHistoryIds = new Set(unlinkedHistory.map((history) => history.id))
+  const assignments = completedAssignments
+    .filter((assignment) => validHistoryIds.has(assignment.historyId))
+    .map((assignment) => {
+      const theme = themeByKey.get(normalizeThemeKey(assignment.themeName))
+
+      return theme
+        ? {
+            historyId: assignment.historyId,
+            themeId: theme.id,
+          }
+        : null
+    })
+    .filter(Boolean)
+
+  await assignHistoryThemes(assignments)
+
+  void publishEventSafely({
+    type: 'news.search_themes_classified',
+    source: 'news-service',
+    payload: {
+      historiesClassified: assignments.length,
+      newThemes: aiResult.newThemes,
+    },
+  })
+}
+
+function buildMetrics(rows) {
   const themes = new Map()
   const users = new Map()
 
   for (const row of rows) {
-    const queryKey = row.query.trim().toLowerCase()
-    const theme = themeByQuery.get(queryKey) ?? normalizeTheme(row.query)
+    const theme = row.theme
     const searchCount = Number(row.searchCount) || 0
 
     if (!themes.has(theme)) {
@@ -291,8 +399,13 @@ async function handleNewsSearch(request, response) {
 
   try {
     payload = await readJson(request)
-  } catch {
-    json(response, 400, { message: 'Nao foi possivel ler os dados da busca.' })
+  } catch (error) {
+    json(response, error?.status === 413 ? 413 : 400, {
+      message:
+        error?.status === 413
+          ? 'Dados da busca muito grandes.'
+          : 'Nao foi possivel ler os dados da busca.',
+    })
     return
   }
 
@@ -309,7 +422,7 @@ async function handleNewsSearch(request, response) {
   url.searchParams.set('q', query)
   url.searchParams.set('language', 'pt')
   url.searchParams.set('sortBy', 'publishedAt')
-  url.searchParams.set('pageSize', String(PAGE_SIZE * 2))
+  url.searchParams.set('pageSize', String(PAGE_SIZE))
   url.searchParams.set('page', String(page))
 
   try {
@@ -319,12 +432,12 @@ async function handleNewsSearch(request, response) {
         title: article.title ?? 'Sem titulo',
         description: article.description ?? '',
         url: article.url ?? '',
+        urlToImage: article.urlToImage ?? '',
         source: article.source?.name ?? 'Fonte nao informada',
         publishedAt: article.publishedAt ?? '',
         author: article.author ?? 'Autor desconhecido',
       })) ?? []
-    const validArticles = articles.filter((article) => article.url.length > 0)
-    const filteredArticles = validArticles.slice(0, PAGE_SIZE)
+    const filteredArticles = articles.filter((article) => article.url.length > 0)
     const totalResults = typeof data.totalResults === 'number' ? data.totalResults : 0
     const totalPages = Math.max(1, Math.ceil(totalResults / PAGE_SIZE))
 
@@ -333,6 +446,18 @@ async function handleNewsSearch(request, response) {
         userEmail: sessionUser.email,
         query,
         totalResults,
+      })
+      void publishEventSafely({
+        type: 'news.search_performed',
+        source: 'news-service',
+        payload: {
+          userId: sessionUser.id,
+          userEmail: sessionUser.email,
+          query,
+          totalResults,
+          page,
+          pageSize: PAGE_SIZE,
+        },
       })
     }
 
@@ -370,308 +495,16 @@ async function handleNewsSearchHistory(request, response) {
   }
 }
 
-function normalizeUrl(value) {
-  return String(value ?? '')
-    .trim()
-    .replace(/#.*$/, '')
-    .replace(/\/+$/, '')
-}
-
-function isHttpUrl(value) {
-  try {
-    const url = new URL(value)
-    return url.protocol === 'http:' || url.protocol === 'https:'
-  } catch {
-    return false
-  }
-}
-
-function decodeHtmlEntities(value) {
-  const namedEntities = {
-    amp: '&',
-    apos: "'",
-    gt: '>',
-    lt: '<',
-    nbsp: ' ',
-    quot: '"',
-  }
-
-  return value.replace(/&(#x?[0-9a-f]+|[a-z]+);/gi, (match, entity) => {
-    const normalized = String(entity).toLowerCase()
-
-    if (normalized.startsWith('#x')) {
-      const codePoint = Number.parseInt(normalized.slice(2), 16)
-      return Number.isFinite(codePoint) ? String.fromCodePoint(codePoint) : match
-    }
-
-    if (normalized.startsWith('#')) {
-      const codePoint = Number.parseInt(normalized.slice(1), 10)
-      return Number.isFinite(codePoint) ? String.fromCodePoint(codePoint) : match
-    }
-
-    return namedEntities[normalized] ?? match
-  })
-}
-
-function htmlToText(html) {
-  return decodeHtmlEntities(
-    html
-      .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, ' ')
-      .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, ' ')
-      .replace(/<noscript\b[^>]*>[\s\S]*?<\/noscript>/gi, ' ')
-      .replace(/<svg\b[^>]*>[\s\S]*?<\/svg>/gi, ' ')
-      .replace(/<header\b[^>]*>[\s\S]*?<\/header>/gi, ' ')
-      .replace(/<footer\b[^>]*>[\s\S]*?<\/footer>/gi, ' ')
-      .replace(/<nav\b[^>]*>[\s\S]*?<\/nav>/gi, ' ')
-      .replace(/<aside\b[^>]*>[\s\S]*?<\/aside>/gi, ' ')
-      .replace(/<form\b[^>]*>[\s\S]*?<\/form>/gi, ' ')
-      .replace(/<(br|p|div|section|article|main|h[1-6]|li|blockquote)\b[^>]*>/gi, '\n')
-      .replace(/<[^>]+>/g, ' ')
-      .replace(/[ \t\f\v]+/g, ' ')
-      .replace(/\n\s+/g, '\n')
-      .replace(/\n{3,}/g, '\n\n')
-      .trim(),
-  )
-}
-
-function extractMetaContent(html, selectors) {
-  for (const selector of selectors) {
-    const pattern = new RegExp(
-      `<meta\\b(?=[^>]*(?:property|name)=["']${selector}["'])[^>]*content=["']([^"']+)["'][^>]*>`,
-      'i',
-    )
-    const match = html.match(pattern)
-
-    if (match?.[1]) {
-      return decodeHtmlEntities(match[1].trim())
-    }
-  }
-
-  return ''
-}
-
-function extractArticleText(html) {
-  const candidates = [
-    ...Array.from(html.matchAll(/<article\b[^>]*>[\s\S]*?<\/article>/gi), (match) => match[0]),
-    ...Array.from(html.matchAll(/<main\b[^>]*>[\s\S]*?<\/main>/gi), (match) => match[0]),
-  ]
-    .map(htmlToText)
-    .filter((text) => text.length >= 400)
-    .sort((a, b) => b.length - a.length)
-
-  const text = candidates[0] ?? htmlToText(html)
-
-  return text.slice(0, MAX_ARTICLE_TEXT_LENGTH)
-}
-
-async function fetchArticleFromUrl(url) {
-  if (!isHttpUrl(url)) {
-    return null
-  }
-
-  const pageResponse = await fetch(url, {
-    method: 'GET',
-    headers: {
-      Accept: 'text/html,application/xhtml+xml',
-      'User-Agent':
-        'Mozilla/5.0 (compatible; PortalEscarlateBot/1.0; +https://portal-escarlate.local)',
-    },
-    redirect: 'follow',
-    signal: AbortSignal.timeout(ARTICLE_FETCH_TIMEOUT_MS),
-  })
-
-  if (!pageResponse.ok) {
-    return null
-  }
-
-  const contentType = pageResponse.headers.get('content-type') ?? ''
-
-  if (!contentType.toLowerCase().includes('text/html')) {
-    return null
-  }
-
-  const contentLength = Number.parseInt(pageResponse.headers.get('content-length') ?? '0', 10)
-
-  if (Number.isFinite(contentLength) && contentLength > MAX_ARTICLE_HTML_LENGTH) {
-    return null
-  }
-
-  const html = await pageResponse.text()
-
-  if (html.length > MAX_ARTICLE_HTML_LENGTH) {
-    return null
-  }
-
-  const content = extractArticleText(html)
-  const urlToImage = extractMetaContent(html, ['og:image', 'twitter:image'])
-
-  if (content.length < 300) {
-    return null
-  }
-
-  return {
-    content,
-    urlToImage,
-  }
-}
-
-function buildSummaryPrompt(article) {
-  const content = String(article?.content ?? article?.description ?? '').trim()
-
-  return [
-    'Voce e um editor jornalistico do Portal Escarlate.',
-    'Abaixo esta o conteudo de uma noticia recuperada a partir da URL original e, se necessario, complementada pela NewsAPI.',
-    'O conteudo pode estar incompleto, bloqueado por paywall ou truncado. Use o titulo, fonte e descricao como contexto auxiliar.',
-    'Escreva um resumo direto em portugues do Brasil, objetivo e coeso, destacando os pontos principais e o contexto mais importante.',
-    'Nao invente fatos que nao estejam no conteudo ou no contexto fornecido. Se o conteudo for incompleto ou truncado, deixe isso claro.',
-    'Retorne apenas texto limpo.',
-    'Nao crie titulo.',
-    'Nao use Markdown, listas, bullets, numeracao, negrito, italico, hashtags, tabelas ou separadores.',
-    'Use no maximo 3 paragrafos curtos, com ate 300 palavras no total.',
-    '',
-    `Titulo: ${article?.title || 'Sem titulo'}`,
-    `URL: ${article?.url || 'URL nao informada'}`,
-    `Autor: ${article?.author || 'Autor desconhecido'}`,
-    `Imagem: ${article?.urlToImage || 'Sem imagem'}`,
-    `Fonte: ${article?.source?.name || article?.source || 'Fonte nao informada'}`,
-    'Conteudo da noticia:',
-    content || 'Sem conteudo disponivel',
-  ].join('\n')
-}
-
-async function handleNewsSummarize(request, response) {
-  const sessionUser = getSessionUser(request)
-
-  if (!sessionUser) {
-    json(response, 401, { message: 'Sessao invalida. Faca login novamente.' })
-    return
-  }
-
-  let payload
-
-  try {
-    payload = await readJson(request)
-  } catch {
-    json(response, 400, { message: 'Nao foi possivel ler os dados da noticia.' })
-    return
-  }
-
-  const title = typeof payload?.title === 'string' ? payload.title.trim() : ''
-  const author = typeof payload?.author === 'string' ? payload.author.trim() : ''
-  const urlToImage = typeof payload?.urlToImage === 'string' ? payload.urlToImage.trim() : ''
-  const url = typeof payload?.url === 'string' ? payload.url.trim() : ''
-  const description = typeof payload?.description === 'string' ? payload.description.trim() : ''
-  const source = typeof payload?.source === 'string' ? payload.source.trim() : ''
-
-  if (!title || !url) {
-    json(response, 400, { message: 'Titulo e URL da noticia sao obrigatorios para resumo.' })
-    return
-  }
-
-  try {
-    const lookupUrl = new URL(NEWS_API_URL)
-    lookupUrl.searchParams.set('q', title)
-    lookupUrl.searchParams.set('language', 'pt')
-    lookupUrl.searchParams.set('sortBy', 'publishedAt')
-    lookupUrl.searchParams.set('pageSize', String(PAGE_SIZE * 2))
-
-    const lookupData = await fetchNewsApiJsonWithFallback(lookupUrl)
-    const normalizedTargetUrl = normalizeUrl(url)
-    const normalizedTargetTitle = title.trim().toLowerCase()
-    const foundArticle = (lookupData.articles ?? []).find((article) => {
-      const articleUrl = normalizeUrl(article.url)
-      const articleTitle = String(article.title ?? '').trim().toLowerCase()
-
-      return articleUrl === normalizedTargetUrl || articleTitle === normalizedTargetTitle
-    })
-
-    const articleFromNewsApi = foundArticle ?? {
-      title,
-      url,
-      author: author || 'Autor desconhecido',
-      urlToImage: urlToImage || '',
-      description,
-      content: '',
-      source,
-    }
-    let articleFromUrl = null
-
-    try {
-      articleFromUrl = await fetchArticleFromUrl(url)
-    } catch (fetchError) {
-      console.warn('[news-service] Could not extract full article from URL', {
-        url,
-        message: fetchError instanceof Error ? fetchError.message : 'Unknown error',
-      })
-    }
-
-    const articleForPrompt = {
-      ...articleFromNewsApi,
-      content:
-        articleFromUrl?.content ||
-        articleFromNewsApi.content ||
-        articleFromNewsApi.description ||
-        description,
-      urlToImage: articleFromNewsApi.urlToImage || articleFromUrl?.urlToImage || urlToImage,
-    }
-
-    const prompt = buildSummaryPrompt(articleForPrompt)
-    const summaryResponse = await fetch(new URL('/internal/ai/chat', getAiServiceUrl()), {
-      method: 'POST',
-      headers: {
-        'content-type': 'application/json',
-      },
-      body: JSON.stringify({
-        messages: [
-          {
-            role: 'system',
-            content:
-              'Voce resume noticias com precisao, sem inventar fatos, em texto limpo, sem Markdown e sem titulo.',
-          },
-          {
-            role: 'user',
-            content: prompt,
-          },
-        ],
-        temperature: 0.3,
-      }),
-    })
-
-    const aiPayload = await summaryResponse.json().catch(() => null)
-
-    if (!summaryResponse.ok) {
-      throw new Error(aiPayload?.message ?? 'Nao foi possivel gerar resumo.')
-    }
-
-    const summary = typeof aiPayload?.content === 'string' ? aiPayload.content.trim() : ''
-
-    json(response, 200, {
-      title: articleForPrompt.title ?? title,
-      author: articleForPrompt.author ?? author,
-      urlToImage: articleForPrompt.urlToImage ?? urlToImage,
-      url: articleForPrompt.url ?? url,
-      summary,
-      provider: aiPayload?.provider,
-      model: aiPayload?.model,
-    })
-  } catch (error) {
-    console.error('[news-service] Failed to summarize news', error)
-    json(response, 500, {
-      message: error instanceof Error ? error.message : 'Nao foi possivel gerar o resumo agora.',
-    })
-  }
-}
-
 async function handleNewsMetrics(request, response) {
   if (!requireAdmin(request, response)) {
     return
   }
 
   try {
+    await classifyAndPersistUnlinkedHistory()
+
     const rows = await listNewsSearchMetricRows()
-    const uniqueQueries = Array.from(new Set(rows.map((row) => row.query.trim()).filter(Boolean)))
-    const themeByQuery = await classifySearchThemes(uniqueQueries)
-    const metrics = buildMetrics(rows, themeByQuery)
+    const metrics = buildMetrics(rows)
 
     json(response, 200, {
       generatedAt: new Date().toISOString(),
@@ -711,11 +544,6 @@ async function route(request, response) {
 
   if (request.method === 'POST' && url.pathname === '/api/news/search') {
     await handleNewsSearch(request, response)
-    return
-  }
-
-  if (request.method === 'POST' && url.pathname === '/api/news/summarize') {
-    await handleNewsSummarize(request, response)
     return
   }
 
