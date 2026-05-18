@@ -10,6 +10,7 @@ import styles from './AuthPortal.module.css'
 type LoginFormProps = {
   active: boolean
   initialNotice?: string
+  onUnknownEmail?: (email: string) => void
 }
 
 const defaultMessage: AuthMessage = {
@@ -17,7 +18,7 @@ const defaultMessage: AuthMessage = {
   text: 'Informe suas credenciais para acessar sua área de pesquisa.',
 }
 
-export function LoginForm({ active, initialNotice }: LoginFormProps) {
+export function LoginForm({ active, initialNotice, onUnknownEmail }: LoginFormProps) {
   const navigate = useNavigate()
   const redirectTo = sanitizeLoginRedirect(new URLSearchParams(window.location.search).get('redirect'))
   const [busy, setBusy] = useState(false)
@@ -76,13 +77,23 @@ export function LoginForm({ active, initialNotice }: LoginFormProps) {
             body: JSON.stringify(parsed.data),
           })
 
+          const payload = (await response.json().catch(() => ({}))) as {
+            code?: string
+            message?: string
+          }
+
           if (!response.ok) {
+            if (payload.code === 'user_not_found') {
+              onUnknownEmail?.(parsed.data.email)
+              return
+            }
+
             setMessage({
               tone: 'error',
               text:
                 response.status === 404
-                  ? 'Backend de autenticação ainda não foi migrado.'
-                  : 'Credenciais inválidas ou conta indisponível no momento.',
+                  ? 'Serviço de autenticação ainda não foi migrado.'
+                  : payload.message ?? 'Credenciais inválidas ou conta indisponível no momento.',
             })
             return
           }
@@ -110,7 +121,7 @@ export function LoginForm({ active, initialNotice }: LoginFormProps) {
         } catch {
           setMessage({
             tone: 'error',
-            text: 'Backend de autenticação ainda não está disponível.',
+            text: 'Serviço de autenticação ainda não está disponível.',
           })
         } finally {
           setBusy(false)
@@ -125,7 +136,7 @@ export function LoginForm({ active, initialNotice }: LoginFormProps) {
             type="email"
             name="email"
             autoComplete="username"
-            placeholder="usuario@dominio.com"
+            placeholder="usuario@exemplo.com.br"
             required
           />
         </span>

@@ -124,7 +124,7 @@ export function NewsSummaryPreparePage() {
           <h1 className={styles.errorTitle}>Erro ao preparar resumo</h1>
           <p className={styles.errorMessage}>{error}</p>
           <button className={styles.backButton} type="button" onClick={() => navigate('/dashboard')}>
-            Voltar para dashboard
+            Voltar ao painel
           </button>
         </section>
       </main>

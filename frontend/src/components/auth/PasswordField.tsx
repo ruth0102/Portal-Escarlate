@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, type ChangeEventHandler } from 'react'
 import styles from './AuthPortal.module.css'
 
 type PasswordFieldProps = {
@@ -6,9 +6,18 @@ type PasswordFieldProps = {
   name: string
   placeholder: string
   autoComplete?: string
+  value?: string
+  onChange?: ChangeEventHandler<HTMLInputElement>
 }
 
-export function PasswordField({ label, name, placeholder, autoComplete }: PasswordFieldProps) {
+export function PasswordField({
+  label,
+  name,
+  placeholder,
+  autoComplete,
+  value,
+  onChange,
+}: PasswordFieldProps) {
   const [visible, setVisible] = useState(false)
   const actionLabel = visible ? 'Ocultar' : 'Mostrar'
 
@@ -20,6 +29,8 @@ export function PasswordField({ label, name, placeholder, autoComplete }: Passwo
           className={`${styles.fieldInput} ${styles.passwordInput}`}
           type={visible ? 'text' : 'password'}
           name={name}
+          value={value}
+          onChange={onChange}
           placeholder={placeholder}
           autoComplete={autoComplete}
           required

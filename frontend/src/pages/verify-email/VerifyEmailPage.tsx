@@ -11,8 +11,8 @@ export function VerifyEmailPage() {
   )
   const [message, setMessage] = useState(
     code
-      ? 'Validando seu codigo de verificacao.'
-      : 'Este link nao pode mais ser usado. Solicite um novo cadastro para receber outro e-mail de confirmacao.',
+      ? 'Validando seu código de verificação.'
+      : 'Este link não pode mais ser usado. Solicite um novo cadastro para receber outro e-mail de confirmação.',
   )
   const verificationStartedRef = useRef(false)
 
@@ -42,19 +42,19 @@ export function VerifyEmailPage() {
 
         if (!response.ok) {
           setState('error')
-          setMessage(payload.message ?? 'Codigo expirado ou invalido.')
+          setMessage(payload.message ?? 'Código expirado ou inválido.')
           return
         }
 
         setState('success')
-        setMessage(payload.message ?? 'E-mail verificado com sucesso. Agora faca login para acessar.')
+        setMessage(payload.message ?? 'E-mail verificado com sucesso. Agora faça login para acessar.')
       } catch (error) {
         if (controller.signal.aborted) {
           return
         }
 
         setState('error')
-        setMessage('Nao foi possivel verificar o e-mail agora.')
+        setMessage('Não foi possível verificar o e-mail agora.')
       }
     }
 
@@ -66,13 +66,13 @@ export function VerifyEmailPage() {
   return (
     <main className={styles.page}>
       <section className={styles.panel}>
-        <span className={styles.kicker}>Verificacao de e-mail</span>
+        <span className={styles.kicker}>Verificação de e-mail</span>
         <h1 className={styles.title}>
           {state === 'success'
             ? 'E-mail verificado'
             : state === 'loading'
               ? 'Verificando e-mail'
-              : 'Codigo expirado ou invalido'}
+              : 'Código expirado ou inválido'}
         </h1>
         <p className={styles.copy}>{message}</p>
         <Link className={styles.action} to="/login">

@@ -84,7 +84,10 @@ async function handleLogin(request, response) {
     const user = await findUserByEmailForAuth(parsed.data.email)
 
     if (!user) {
-      json(response, 401, { message: 'Credenciais invalidas.' })
+      json(response, 401, {
+        code: 'user_not_found',
+        message: 'E-mail não cadastrado.',
+      })
       return
     }
 

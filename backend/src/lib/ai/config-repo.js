@@ -22,13 +22,37 @@ async function listActiveAiConfigsFromTables(apiKeysTable, modelsTable) {
   )
 
   const configs = []
+  const decryptedApiKeys = new Map()
 
   for (const row of result.rows) {
-    if (row.api_key && !isEncryptedSecret(row.api_key)) {
+    let storedApiKey = row.api_key
+
+    if (storedApiKey && !isEncryptedSecret(storedApiKey)) {
+      storedApiKey = encryptSecret(storedApiKey)
       await query(`update ${apiKeysTable} set api_key = $2 where id = $1`, [
         row.api_key_id,
-        encryptSecret(row.api_key),
+        storedApiKey,
       ])
+    }
+
+    if (!decryptedApiKeys.has(row.api_key_id)) {
+      try {
+        decryptedApiKeys.set(row.api_key_id, decryptSecret(storedApiKey))
+      } catch (error) {
+        console.warn('[ai-service] Ignoring unreadable AI API key', {
+          id: row.api_key_id,
+          provider: row.provider,
+          label: row.label,
+          message: error instanceof Error ? error.message : 'Unknown decryption error',
+        })
+        decryptedApiKeys.set(row.api_key_id, null)
+      }
+    }
+
+    const decryptedApiKey = decryptedApiKeys.get(row.api_key_id)
+
+    if (!decryptedApiKey) {
+      continue
     }
 
     let config = configs.find((item) => item.apiKeyId === row.api_key_id)
@@ -38,7 +62,7 @@ async function listActiveAiConfigsFromTables(apiKeysTable, modelsTable) {
         apiKeyId: row.api_key_id,
         provider: row.provider,
         label: row.label,
-        apiKey: decryptSecret(row.api_key),
+        apiKey: decryptedApiKey,
         models: [],
       }
       configs.push(config)

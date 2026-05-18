@@ -70,10 +70,21 @@ export async function listUnlinkedSearchHistory(limit = 500) {
 }
 
 export async function upsertSearchThemeNames(themeNames) {
-  const rows = Array.from(new Set(themeNames.map(normalizeThemeName).filter(Boolean))).map((name) => ({
-    name,
-    name_normalized: normalizeThemeKey(name),
-  }))
+  const rowByKey = new Map()
+
+  for (const themeName of themeNames) {
+    const name = normalizeThemeName(themeName)
+    const nameNormalized = normalizeThemeKey(name)
+
+    if (name && nameNormalized && !rowByKey.has(nameNormalized)) {
+      rowByKey.set(nameNormalized, {
+        name,
+        name_normalized: nameNormalized,
+      })
+    }
+  }
+
+  const rows = Array.from(rowByKey.values())
 
   if (rows.length === 0) {
     return new Map()
@@ -115,7 +126,7 @@ export async function assignHistoryThemes(assignments) {
     return
   }
 
-  await query(
+  const result = await query(
     `update news_search_history as history
      set theme_id = input.theme_id::uuid
      from jsonb_to_recordset($1::jsonb) as input(history_id uuid, theme_id uuid)
@@ -123,6 +134,8 @@ export async function assignHistoryThemes(assignments) {
        and history.theme_id is null`,
     [JSON.stringify(rows)],
   )
+
+  return result.rowCount
 }
 
 export async function listNewsSearchMetricRows() {

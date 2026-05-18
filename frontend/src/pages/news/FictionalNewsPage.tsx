@@ -52,7 +52,7 @@ export function FictionalNewsPage() {
             acompanhe um mesmo assunto por perspectivas variadas antes de decidir onde
             aprofundar a leitura.
             {'\n\n'}
-            Esta notícia é uma página fictícia usada como conteúdo inicial do dashboard. Ela
+            Esta notícia é uma página fictícia usada como conteúdo inicial do painel. Ela
             serve para demonstrar o comportamento dos cards antes da primeira pesquisa real,
             mantendo a navegação consistente com o restante da aplicação.
           </div>

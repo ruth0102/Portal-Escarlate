@@ -33,7 +33,7 @@ function AuthEntryPage({ initialMode, loginNotice }: { initialMode?: 'login'; lo
           return
         }
       } catch {
-        // Sem sessao valida: exibe o login normalmente.
+        // Sem sessão válida: exibe o login normalmente.
       } finally {
         if (!controller.signal.aborted) {
           setCheckingSession(false)

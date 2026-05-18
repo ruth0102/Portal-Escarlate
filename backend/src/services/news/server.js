@@ -217,6 +217,79 @@ function buildThemeAssignmentPrompt(input) {
   ].join('\n')
 }
 
+function parseThemeNameCandidate(value) {
+  if (typeof value === 'string') {
+    return normalizeThemeName(value)
+  }
+
+  if (!value || typeof value !== 'object') {
+    return ''
+  }
+
+  return normalizeThemeName(
+    value.name ??
+      value.themeName ??
+      value.theme_name ??
+      value.theme ??
+      value.label ??
+      '',
+  )
+}
+
+function parseHistoryIdCandidate(value) {
+  return String(
+    value?.historyId ??
+      value?.history_id ??
+      value?.historyID ??
+      value?.id ??
+      '',
+  ).trim()
+}
+
+function parseAssignments(parsed, unlinkedHistory) {
+  const historyIdByQuery = new Map(
+    unlinkedHistory.map((history) => [String(history.query ?? '').trim().toLowerCase(), history.id]),
+  )
+  const sourceAssignments = Array.isArray(parsed)
+    ? parsed
+    : Array.isArray(parsed?.assignments)
+      ? parsed.assignments
+      : []
+
+  return sourceAssignments
+    .map((assignment) => {
+      const historyId =
+        parseHistoryIdCandidate(assignment) ||
+        historyIdByQuery.get(String(assignment?.query ?? '').trim().toLowerCase()) ||
+        ''
+      const themeName = parseThemeNameCandidate(
+        assignment?.themeName ??
+          assignment?.theme_name ??
+          assignment?.theme ??
+          assignment?.name ??
+          assignment?.label,
+      )
+
+      return {
+        historyId,
+        themeName,
+      }
+    })
+    .filter((assignment) => assignment.historyId && assignment.themeName)
+}
+
+function parseNewThemes(parsed, assignments) {
+  const explicitThemes = Array.isArray(parsed?.newThemes)
+    ? parsed.newThemes
+    : Array.isArray(parsed?.new_themes)
+      ? parsed.new_themes
+      : []
+  const parsedThemes = explicitThemes.map(parseThemeNameCandidate).filter(Boolean)
+  const assignmentThemes = assignments.map((assignment) => assignment.themeName).filter(Boolean)
+
+  return Array.from(new Set([...parsedThemes, ...assignmentThemes].map(normalizeThemeName).filter(Boolean)))
+}
+
 async function classifyUnlinkedHistory(existingThemes, unlinkedHistory) {
   if (unlinkedHistory.length === 0) {
     return {
@@ -256,20 +329,15 @@ async function classifyUnlinkedHistory(existingThemes, unlinkedHistory) {
   const content = stripJsonFence(payload?.content)
   const parsed = JSON.parse(content)
 
-  if (!parsed || typeof parsed !== 'object' || !Array.isArray(parsed.assignments)) {
+  if (!parsed || (typeof parsed !== 'object' && !Array.isArray(parsed))) {
     throw new Error('A IA retornou metricas em formato invalido.')
   }
 
+  const assignments = parseAssignments(parsed, unlinkedHistory)
+
   return {
-    newThemes: Array.isArray(parsed.newThemes)
-      ? parsed.newThemes.map((theme) => normalizeThemeName(theme?.name)).filter(Boolean)
-      : [],
-    assignments: parsed.assignments
-      .map((assignment) => ({
-        historyId: String(assignment?.historyId ?? '').trim(),
-        themeName: normalizeThemeName(assignment?.themeName),
-      }))
-      .filter((assignment) => assignment.historyId && assignment.themeName),
+    newThemes: parseNewThemes(parsed, assignments),
+    assignments,
   }
 }
 
@@ -314,13 +382,14 @@ async function classifyAndPersistUnlinkedHistory() {
     })
     .filter(Boolean)
 
-  await assignHistoryThemes(assignments)
+  const linkedCount = await assignHistoryThemes(assignments)
 
   void publishEventSafely({
     type: 'news.search_themes_classified',
     source: 'news-service',
     payload: {
-      historiesClassified: assignments.length,
+      historiesClassified: linkedCount ?? 0,
+      assignmentsRequested: assignments.length,
       newThemes: aiResult.newThemes,
     },
   })

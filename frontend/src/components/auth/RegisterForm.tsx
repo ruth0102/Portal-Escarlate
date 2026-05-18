@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { AuthForm, type AuthMessage } from './AuthForm'
 import { PasswordField } from './PasswordField'
@@ -8,6 +8,7 @@ import styles from './AuthPortal.module.css'
 
 type RegisterFormProps = {
   active: boolean
+  initialEmail?: string
 }
 
 const defaultMessage: AuthMessage = {
@@ -15,9 +16,41 @@ const defaultMessage: AuthMessage = {
   text: 'Crie sua conta e confirme o e-mail para liberar o acesso.',
 }
 
-export function RegisterForm({ active }: RegisterFormProps) {
+export function RegisterForm({ active, initialEmail = '' }: RegisterFormProps) {
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState<AuthMessage>(defaultMessage)
+  const [email, setEmail] = useState(initialEmail)
+  const [password, setPassword] = useState('')
+  const passwordRules = [
+    {
+      label: 'Ao menos 8 caracteres',
+      valid: password.length >= 8,
+    },
+    {
+      label: 'Pelo menos uma letra',
+      valid: /[A-Za-z]/.test(password),
+    },
+    {
+      label: 'Pelo menos um número',
+      valid: /[0-9]/.test(password),
+    },
+    {
+      label: 'Pelo menos um caractere especial',
+      valid: /[^A-Za-z0-9]/.test(password),
+    },
+  ]
+
+  useEffect(() => {
+    if (!initialEmail) {
+      return
+    }
+
+    setEmail(initialEmail)
+    setMessage({
+      tone: 'error',
+      text: 'Este e-mail não está cadastrado. Complete o cadastro para solicitar o acesso.',
+    })
+  }, [initialEmail])
 
   return (
     <AuthForm
@@ -79,7 +112,7 @@ export function RegisterForm({ active }: RegisterFormProps) {
               text:
                 payload.message ??
                 (response.status === 404
-                  ? 'Backend de cadastro ainda não foi migrado.'
+                  ? 'Serviço de cadastro ainda não foi migrado.'
                   : 'Não foi possível concluir o cadastro.'),
             })
             return
@@ -94,7 +127,7 @@ export function RegisterForm({ active }: RegisterFormProps) {
         } catch {
           setMessage({
             tone: 'error',
-            text: 'Backend de cadastro ainda não está disponível.',
+            text: 'Serviço de cadastro ainda não está disponível.',
           })
         } finally {
           setBusy(false)
@@ -108,8 +141,10 @@ export function RegisterForm({ active }: RegisterFormProps) {
             className={styles.fieldInput}
             type="email"
             name="email"
+            value={email}
+            onChange={(event) => setEmail(event.currentTarget.value)}
             autoComplete="username"
-            placeholder="novo@dominio.com"
+            placeholder="novo@exemplo.com.br"
             required
           />
         </span>
@@ -118,9 +153,24 @@ export function RegisterForm({ active }: RegisterFormProps) {
       <PasswordField
         label="Senha"
         name="password"
+        value={password}
+        onChange={(event) => setPassword(event.currentTarget.value)}
         placeholder="Crie uma senha"
         autoComplete="new-password"
       />
+
+      <ul className={styles.passwordRequirements} aria-label="Requisitos da senha">
+        {passwordRules.map((rule) => (
+          <li
+            className={`${styles.passwordRequirement} ${
+              rule.valid ? styles.passwordRequirementValid : ''
+            }`}
+            key={rule.label}
+          >
+            {rule.label}
+          </li>
+        ))}
+      </ul>
 
       <PasswordField
         label="Confirmar senha"

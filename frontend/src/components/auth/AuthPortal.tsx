@@ -12,11 +12,23 @@ type AuthPortalProps = {
 
 export function AuthPortal({ initialMode = 'login', loginNotice }: AuthPortalProps) {
   const [mode, setMode] = useState<Mode>(initialMode)
+  const [registerEmail, setRegisterEmail] = useState('')
+
+  function handleUnknownLoginEmail(email: string) {
+    setRegisterEmail(email)
+    setMode('register')
+  }
 
   return (
     <main className={styles.page}>
       <section className={styles.scene}>
         <section className={styles.hero}>
+          <div className={styles.heroAmbient} aria-hidden="true">
+            <span className={styles.gridPlane} />
+            <span className={styles.signalRing} />
+            <span className={styles.signalRingSmall} />
+          </div>
+
           <div className={styles.brandStack}>
             <div className={styles.crest} aria-hidden="true">
               <img className={styles.crestImage} src="/favicon.ico" alt="" />
@@ -28,9 +40,29 @@ export function AuthPortal({ initialMode = 'login', loginNotice }: AuthPortalPro
                 Portal <span className={styles.accent}>Escarlate</span>
               </h1>
               <p className={styles.lead}>
-                Pesquise temas, conecte sinais entre notícias e transforme resultados em
-                sínteses claras com apoio de inteligência artificial.
+                Encontre notícias relevantes, compare fontes e transforme resultados dispersos
+                em uma leitura clara com apoio de inteligência artificial.
               </p>
+            </div>
+          </div>
+
+          <div className={styles.insightPanel} aria-hidden="true">
+            <div className={styles.insightHeader}>
+              <span>Radar editorial</span>
+              <strong>Ao vivo</strong>
+            </div>
+
+            <div className={styles.signalBoard}>
+              <span className={styles.signalLine} />
+              <span className={styles.signalLine} />
+              <span className={styles.signalLine} />
+            </div>
+
+            <div className={styles.topicFlow}>
+              <span>Política</span>
+              <span>Economia</span>
+              <span>Ciência</span>
+              <span>Cultura</span>
             </div>
           </div>
 
@@ -92,8 +124,12 @@ export function AuthPortal({ initialMode = 'login', loginNotice }: AuthPortalPro
               </div>
 
               <div className={styles.panelArea}>
-                <LoginForm active={mode === 'login'} initialNotice={loginNotice} />
-                <RegisterForm active={mode === 'register'} />
+                <LoginForm
+                  active={mode === 'login'}
+                  initialNotice={loginNotice}
+                  onUnknownEmail={handleUnknownLoginEmail}
+                />
+                <RegisterForm active={mode === 'register'} initialEmail={registerEmail} />
               </div>
             </div>
           </div>

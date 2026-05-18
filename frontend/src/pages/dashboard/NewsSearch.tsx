@@ -54,9 +54,9 @@ function LoadingSignal({ label }: { label: string }) {
 const previewArticles: NewsArticle[] = [
   {
     shortId: 'preview-escarlate',
-    title: 'Portal Escarlate lança nova plataforma de notícias',
+    title: 'Portal Escarlate lança plataforma de notícias inteligentes',
     description:
-      'Portal Escarlate é a nova plataforma de notícias para ficar ligados em todos os assuntos — política, economia, ciência, cultura e mais.',
+      'Portal Escarlate é uma plataforma de notícias para acompanhar assuntos relevantes em política, economia, ciência, cultura e outras áreas.',
     url: '/news/portal-escarlate',
     source: 'Portal Escarlate',
     publishedAt: new Date().toISOString(),
@@ -578,7 +578,7 @@ export function NewsSearch() {
         setError(
           data.message ??
             (response.status === 404
-              ? 'Backend de notícias ainda não foi migrado.'
+              ? 'Serviço de notícias ainda não foi migrado.'
               : 'Falha ao buscar notícias.'),
         )
         return
@@ -611,7 +611,7 @@ export function NewsSearch() {
       void summarizePage({ query: input.query, articles: nextArticles })
     } catch {
       setArticles(previewArticles)
-      setError('Backend de notícias ainda não está disponível.')
+      setError('Serviço de notícias ainda não está disponível.')
     } finally {
       setLoading(false)
     }
