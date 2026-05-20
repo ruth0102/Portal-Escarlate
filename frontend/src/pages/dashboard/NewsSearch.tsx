@@ -408,6 +408,16 @@ export function NewsSearch() {
     scrollToArticle(shortId)
   }
 
+  function cleanVisibleSummarySegment(text: string, shortId: string) {
+    const escapedShortId = shortId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+
+    return text
+      .replace(new RegExp(`\\s*\\(?\\[?${escapedShortId}\\]?\\)?\\s*`, 'gi'), ' ')
+      .replace(/\s+([,.;:!?])/g, '$1')
+      .replace(/\s{2,}/g, ' ')
+      .trim()
+  }
+
   function renderMarkedSummaryInline(source: string) {
     const nodes: ReactNode[] = []
     const pattern = /\[\[([\s\S]+?)\]\]\(\(([^)]+)\)\)/g
@@ -421,6 +431,12 @@ export function NewsSearch() {
 
       const segmentText = match[1] ?? ''
       const shortId = String(match[2] ?? '').trim()
+      const visibleSegmentText = cleanVisibleSummarySegment(segmentText, shortId)
+
+      if (!visibleSegmentText) {
+        cursor = match.index + match[0].length
+        continue
+      }
 
       nodes.push(
         <span
@@ -432,7 +448,7 @@ export function NewsSearch() {
           onKeyDown={(event) => handleSummarySegmentKeyDown(event, shortId)}
           title="Ir para a notícia relacionada"
         >
-          {segmentText}
+          {visibleSegmentText}
         </span>,
       )
 

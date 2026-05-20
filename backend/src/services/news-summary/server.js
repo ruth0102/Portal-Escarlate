@@ -95,6 +95,8 @@ function buildNewsSummaryPrompt(input) {
     'A sintese deve ser um texto unico, natural e bom de ler.',
     'Quando uma frase ou trecho estiver relacionado a uma noticia especifica, marque esse trecho no formato [[texto do trecho]]((ShortID)).',
     'Exemplo: Nessa semana, [[a decisao economica ganhou destaque]]((abc123)) enquanto [[novas medidas foram anunciadas]]((def456)).',
+    'O ShortID deve aparecer somente dentro dos parenteses finais ((ShortID)). Nunca coloque o ShortID dentro do texto visivel.',
+    'Errado: [[(abc123)]]((abc123)). Correto: [[a decisao economica ganhou destaque]]((abc123)).',
     'Regra obrigatoria: praticamente todo o texto informativo deve estar dentro de marcacoes [[...]]((ShortID)).',
     'Trechos sem ShortID devem ser apenas conectivos muito curtos, como "Enquanto isso," ou "No mesmo periodo,".',
     'Nunca deixe uma frase inteira sem marcacao.',
@@ -141,7 +143,7 @@ async function requestAiSummary(input) {
         {
           role: 'system',
           content:
-            'Voce resume noticias com precisao em texto limpo, sem Markdown, sem titulo e sem listas. Use marcacoes [[trecho]]((shortId)) quando associar trechos a noticias.',
+            'Voce resume noticias com precisao em texto limpo, sem Markdown, sem titulo e sem listas. Use marcacoes [[trecho]]((shortId)) quando associar trechos a noticias. O shortId nunca deve aparecer como texto visivel.',
         },
         {
           role: 'user',
@@ -240,13 +242,34 @@ function parseSummarySegments(summary, articles) {
   return segments.slice(0, 12)
 }
 
+function cleanVisibleMarkedText(text, shortId) {
+  const escapedShortId = shortId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+
+  return cleanPlainText(text)
+    .replace(new RegExp(`\\s*\\(?\\[?${escapedShortId}\\]?\\)?\\s*`, 'gi'), ' ')
+    .replace(/\s+([,.;:!?])/g, '$1')
+    .replace(/\s{2,}/g, ' ')
+    .trim()
+}
+
 function cleanMarkedSummary(value) {
-  return value
+  const cleaned = value
     .replace(/^```(?:text)?\s*/i, '')
     .replace(/\s*```$/i, '')
     .replace(/^["']|["']$/g, '')
     .replace(/^\s*(resumo|sintese|síntese|noticia central|notícia central)\s*:\s*/i, '')
     .trim()
+
+  return cleaned.replace(/\[\[([\s\S]+?)\]\]\(\(([^)]+)\)\)/g, (fullMatch, text, shortId) => {
+    const normalizedShortId = String(shortId ?? '').trim()
+    const visibleText = cleanVisibleMarkedText(text, normalizedShortId)
+
+    if (!visibleText) {
+      return ''
+    }
+
+    return `[[${visibleText}]]((${normalizedShortId}))`
+  })
 }
 
 function stripSummaryMarkers(value) {
