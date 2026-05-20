@@ -418,6 +418,17 @@ export function NewsSearch() {
       .trim()
   }
 
+  function cleanIncompleteSummaryMarkers(text: string) {
+    return text
+      .replace(/\[\[/g, '')
+      .replace(/\]\]\(\([^)]*$/g, '')
+      .replace(/\]\]\([^)]*$/g, '')
+      .replace(/\]\]\(?\.?$/g, '')
+      .replace(/\]\]/g, '')
+      .replace(/\(\([a-z0-9-]*$/gi, '')
+      .replace(/\([a-z0-9-]*$/gi, '')
+  }
+
   function renderMarkedSummaryInline(source: string) {
     const nodes: ReactNode[] = []
     const pattern = /\[\[([\s\S]+?)\]\]\(\(([^)]+)\)\)/g
@@ -457,7 +468,11 @@ export function NewsSearch() {
 
     if (cursor < source.length) {
       const tail = source.slice(cursor)
-      nodes.push(tail.replace(/\[\[|\]\]\(\([^)]*$/g, ''))
+      const visibleTail = cleanIncompleteSummaryMarkers(tail)
+
+      if (visibleTail) {
+        nodes.push(visibleTail)
+      }
     }
 
     return nodes
