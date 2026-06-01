@@ -1,0 +1,27 @@
+{
+  "name": "portal-escarlate-backend",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "node src/dev.js",
+    "dev:gateway": "node --env-file=../.env --watch src/server.js",
+    "dev:auth": "node --env-file=../.env --watch src/services/auth/server.js",
+    "dev:registration": "node --env-file=../.env --watch src/services/registration/server.js",
+    "dev:password-recovery": "node --env-file=../.env --watch src/services/password-recovery/server.js",
+    "dev:email": "node --env-file=../.env --watch src/services/email/server.js",
+    "dev:news": "node --env-file=../.env --watch src/services/news/server.js",
+    "dev:ai": "node --env-file=../.env --watch src/services/ai/server.js",
+    "dev:ai-summary": "npm run dev:news-summary",
+    "dev:news-summary": "node --env-file=../.env --watch src/services/news-summary/server.js",
+    "dev:article-summary": "node --env-file=../.env --watch src/services/article-summary/server.js",
+    "dev:events": "node --env-file=../.env --watch src/services/events/server.js",
+    "start": "node src/start.js"
+  },
+  "dependencies": {
+    "argon2": "^0.44.0",
+    "googleapis": "^171.4.0",
+    "pg": "^8.20.0",
+    "zod": "^4.4.3"
+  }
+}

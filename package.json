@@ -1,0 +1,18 @@
+{
+  "name": "portal-escarlate",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "npm run dev --prefix frontend",
+    "dev:frontend": "npm run dev --prefix frontend",
+    "dev:backend": "npm run dev --prefix backend",
+    "build": "node scripts/build.js",
+    "preview": "npm run preview --prefix frontend",
+    "start": "node --env-file=.env scripts/start.js"
+  },
+  "workspaces": [
+    "frontend",
+    "backend"
+  ]
+}
