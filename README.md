@@ -1,39 +1,63 @@
-# 🔴 Portal Escarlate – Plataforma Inteligente de Análise de Notícias
+# Portal Escarlate
 
-## 👥 Integrantes
-- Enzo Pistori Fontenele de Oliveira - 23.00768-0
-- Luigi de Menezes Collesi - 23.00625-0
-- Luigi de Lauand Botto - 23.01066-5
-- Ruth Ramos Romeu - 22.01003-3
+Plataforma de notícias com inteligência artificial desenvolvida como Trabalho Semestral para as disciplinas de Linguagens de Programação 2 e Arquitetura de Sistemas Computacionais. O portal oferece curadoria e tecnologia em uma experiência digital moderna, buscando notícias reais e gerando resumos sintetizados através de IA.
 
-## 📌 Descrição do Projeto
-O Portal Escarlate é uma plataforma web que tem como objetivo central oferecer uma forma mais inteligente, organizada e crítica de consumir notícias.
-A aplicação visa permitir que usuários acessem notícias relevantes com o diferencial de utilizar inteligência artificial para processamento de conteúdo e cruzar dados públicos de agentes políticos. O estágio atual do sistema foca na base estrutural de microsserviços, segurança e comunicação assíncrona para suportar essas futuras integrações.
+## 👥 Integrantes da Equipe
+* Luigi de Menezes Collesi (RA: 23.00625-0)
+* Luigi de Lauand Botto (RA: 23.01066-5)
+* Enzo Pistori Fontenele (RA: 23.00768-0)
+* Ruth Ramos Romeu (RA: 22.01003-3)
 
-## 🚀 Funcionalidades Atuais
-- Cadastro, autenticação e exclusão autônoma de usuários
-- Sessões dinâmicas com controle temporizado de expiração de acesso (JWT)
-- Rotas protegidas no Front-End
-- Captura de eventos do sistema (criação, login e exclusão de contas) via Barramento
-- Persistência de dados em nuvem com Supabase
+---
 
-## 🛠️ Tecnologias e Arquitetura
-O projeto está sendo desenvolvido utilizando o padrão de **Microsserviços**, garantindo que cada domínio da aplicação seja independente e escalável.
-- **Front-End:** Next.js (App Router), NextAuth (Sessões JWT via Cookies) e Axios.
-- **Back-End (Auth):** Node.js, Express, BcryptJS (Hash de senhas) e Supabase (PostgreSQL em nuvem).
-- **Comunicação:** Barramento de Eventos interno para comunicação assíncrona entre os microsserviços.
+## 🏛️ Arquitetura do Sistema
 
-## ⚙️ Como executar o projeto localmente
-**1. Configuração do Banco de Dados**
-O projeto utiliza o Supabase como banco de dados em nuvem. Crie um projeto na plataforma Supabase e rode o script localizado em `back/servico-auth/schema.sql` no editor SQL deles para criar as tabelas necessárias.
+A plataforma foi desenhada utilizando uma arquitetura robusta de microsserviços. O sistema é dividido entre uma aplicação Front-end em React e um Back-end em Node.js que rodam em uma Máquina Virtual Linux.
 
-**2. Variáveis de Ambiente (.env)**
-No diretório do microsserviço de autenticação (`back/servico-auth`), crie um arquivo `.env` com a seguinte estrutura:
-`SUPABASE_URL="https://sua-url-do-supabase.supabase.co"`
-`SUPABASE_SERVICE_ROLE_KEY="sua_chave_service_role_aqui"`
+O Back-end concentra todas as regras de negócio e integrações, possuindo um **Gateway HTTP** (na porta 3000) que recebe as requisições e as roteia internamente através de um barramento centralizado chamado **Event Service**. 
 
-**3. Inicialização dos Serviços**
-Abra terminais distintos para cada serviço e execute:
-- **Barramento:** `node index.js` (Porta 10000)
-- **Serviço de Auth:** `node index.js` (Porta 4000)
-- **Front-End:** `npm run dev` (Porta 3000)
+Para garantir a independência e segurança dos dados, não há relacionamento cruzado entre os bancos: cada microsserviço possui e gerencia seu próprio banco de dados PostgreSQL dedicado.
+
+---
+
+## ⚙️ Microsserviços
+
+O back-end é composto por 9 serviços independentes:
+
+* **Auth Service (Porta 3001):** Gerencia login, sessões, cookies (HttpOnly) e validação dos dados da conta.
+* **News Service (Porta 3002):** Responsável por buscar notícias, realizar a paginação (20 por página), salvar histórico e gerar métricas.
+* **Registration Service (Porta 3003):** Cuida do cadastro, tokens de verificação e confirmação de e-mail.
+* **AI Service (Porta 3004):** Executa as requisições ao provedor de IA externo, com sistemas de fallback de chaves e modelos.
+* **News Summary Service (Porta 3005):** Monta os prompts a partir da página de notícias e solicita resumos centrais ao AI Service.
+* **Email Service (Porta 3006):** Gerencia a conexão OAuth com o Google, validando refresh tokens e enviando e-mails automáticos.
+* **Event Service (Porta 3007):** Barramento interno que centraliza, registra e distribui eventos entre os microsserviços.
+* **Article Summary Service (Porta 3008):** Resume artigos individuais por URL, gerenciando um cache persistente recuperável via UUID.
+* **Password Recovery Service (Porta 3009):** Gerencia as solicitações de mudança de senha e tokens temporários.
+
+---
+
+## 🛠️ Tecnologias Utilizadas
+
+### Front-end
+* **React & Vite:** Para construção da interface de usuário e servidor de desenvolvimento/build rápido.
+* **TypeScript:** Para tipagem estática e redução de erros em desenvolvimento.
+* **React Router DOM:** Para navegação e gerenciamento das rotas das páginas.
+* **Zod:** Para validação tipada de dados e formulários.
+
+### Back-end
+* **Node.js Nativo:** Utilização extensiva de módulos nativos (`node:http`, `node:crypto`, `node:fs`, `node:net`) visando performance e controle sem excesso de frameworks pesados.
+* **Argon2:** Para geração e verificação de hashes criptográficos das senhas.
+* **Zod:** Para validação de payloads e schemas no lado do servidor.
+* **pg (node-postgres):** Para a comunicação direta com os bancos PostgreSQL.
+* **Google APIs:** Para integração com OAuth 2.0 e disparo de e-mails pelo Gmail.
+
+### Bancos de Dados
+* **PostgreSQL:** Bancos isolados por domínio (ex: `auth_db`, `news_db`, `ai_db`, `email_db`, etc.).
+
+---
+
+## 🔗 Integrações Externas (APIs)
+
+* **NewsAPI.org:** Utilizada pelo News Service para a busca estruturada de artigos e notícias.
+* **OpenRouter:** Funciona como o Gateway de Inteligência Artificial para as requisições gerativas do AI Service.
+* **Gmail API / Google OAuth:** Utilizada pelo Email Service para envio de links transacionais e gestão de permissões administrativas de disparo.
